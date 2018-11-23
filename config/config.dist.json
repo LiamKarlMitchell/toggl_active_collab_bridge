@@ -1,0 +1,18 @@
+{
+  "DataDirectory": "./data",
+  "PIDFilePath": "./data/pid.lock",
+  "Toggl": {
+    "token": "togglAPITokenGoesHere",
+    "workspace": "ExampleWorkspace",
+    "workspaceId": null
+  },
+  "ActiveCollab": {
+    "Users": [],
+    "apiToken": "activeCollabAPITokenHere",
+    "apiUrl": "https://selfhostedactivecollab/api.php",
+    "email": "",
+    "password": ""
+  },
+  "Tasks": {
+  }
+}
