@@ -18,11 +18,16 @@ Clone/Download the repo.
 Copy the config.dist.json and name it config.json
  Set up your Toggl API Key.
 
-Create a workspace in Toggl f it does not exist already, you may be able to use the default workspace by it's id.
+Create a workspace in Toggl if it does not exist already, you may be able to use the default workspace by it's id.
 
 The Workspace ID can be seen in the url when you click the settings of the Workspace on the toggl.com/app/workspaces page the program can alternatively find it by the configured Name if needed.
 
 Set up your Active Collab API key subscription and put it in the Config.
+
+Install node modules.
+```bash
+npm install
+```
 
 ## Configuration
 To be discussed, I'll write this soon.  
@@ -33,7 +38,29 @@ In short,
 - Fill in API keys, Active Collab URL and Workspace id/Name.
 - Specify the user mapping of TogglId to ActiveCollabId.
 
-Test that it works on a simple project and ticket first.
+## Toggl API Token
+
+Login to https://toggl.com/app/timer
+Click on your Profile and click Profile Settings
+You can find your API token on that page.
+
+See here for Toggl's documentation on this.
+https://support.toggl.com/my-profile/#api
+
+Ensure Time Zone is set as you expect.
+
+## Active Collab API Token
+
+In Active Collab navigate to ```People``` and ```Click your self.```
+Click Options in the top right and select API Subscriptions
+Click New Subscription in the top right
+
+Fill in whatever you like but ensure Read Only is set to No.
+Click Add Subscription
+
+To view the Token and API URL click on the Magnifyer + button.
+
+Ensure Time Zone is set in your profile settings.
 
 ## Workflow
 When entering time entries into Toggl you should.
