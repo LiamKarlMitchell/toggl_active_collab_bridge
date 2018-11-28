@@ -1,0 +1,36 @@
+{
+  "name": "togglactivecollab4bridge",
+  "version": "1.0.0",
+  "description": "An application to sync projects to Toggl from Active Collab 4.2.17 to Toggl. And to sync from Toggl tracked times to Active Collab time record entries..",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "Active",
+    "Collab",
+    "Toggl",
+    "Sync",
+    "time",
+    "from",
+    "Toggl",
+    "to",
+    "Active",
+    "Collab"
+  ],
+  "author": "Liam Mitchell",
+  "license": "MIT",
+  "dependencies": {
+    "bluebird": "^3.5.3",
+    "deep-equal": "^1.0.1",
+    "exceljs": "^1.6.2",
+    "minimist": "^1.2.0",
+    "moment": "^2.22.2",
+    "node-cache": "^4.2.0",
+    "node-cron": "^2.0.3",
+    "node-schedule": "^1.3.0",
+    "request-promise": "^4.2.2",
+    "toggl-api": "^1.0.1"
+  }
+}

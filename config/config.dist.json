@@ -1,6 +1,9 @@
 {
   "DataDirectory": "./data",
   "PIDFilePath": "./data/pid.lock",
+  "TimeEntriesRetrieveDuration": {
+    "weeks": 2
+  },
   "Toggl": {
     "token": "togglAPITokenGoesHere",
     "workspace": "ExampleWorkspace",
@@ -13,6 +16,9 @@
     "email": "",
     "password": ""
   },
-  "Tasks": {
-  }
+  "Schedule": {
+    "CompaniesAndProjects": "0 * * * *",
+    "TimeEntries": "*/5 * * * *"
+  },
+  "projectTasksCacheTTLSeconds": 300
 }
