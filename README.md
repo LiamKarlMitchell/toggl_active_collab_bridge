@@ -97,75 +97,92 @@ What works for me may not work for you.
 So far I have had to ask my-self these questions feel free to make an Issue asking something if it is not here or email me.
 
 Q. What Active Collab does this support?
+
 A. None, but it seems to work with Self Hosted v4.2.17.
 
 Q. Why such an old version of Active Collab?
+
 A. It's keeps the lights on, if it ain't fix don't break it right?
     (I'm simply poking it with a stick, yes I tried activeCollab Timer 3 but it *ain't got nuffin* on Toggl).
 
 Q. I changed the time entry details or deleted it, have I broken this?
+
 A. Nope it should check and delete/create or update as needed for previous entries so long as the modifications are within the configured duration to sync for.
   
 Q. How can I ignore some Projects/Clients from being Synced over?
+
 A. Edit the code and make a Pull request for adding this functionality to the configuration. I would love to have this.
 - Alternatively you might remove the Projects/Clients you are not interested in from Toggl after they have been created?
 
 Q. How can I mark something as Billable?
+
 A. Choose the Billable checkbox or simply put an $ after the ticket number in the description. *Note: I have not tested the billable flag although it should work.*
 
 Q. What about Toggl's paid plan features such as Billable and Tickets?
+
 A. I am still testing Toggl out to see if it remains essential to my day to day so have not yet sprung for the paid plan. Billable should work just fine, Tickets would be something else...
 
 Q. Can time entries not mapped to a project or not containing an issue number to be caught and assigned to a specific project ticket?
+
 A. No but this would be an awesome feature, please make a pull request and add it, or consider donating to me and I'll see what I can do?
 
 Q. What if I enter the wrong Issue Number or Project on a time entry description?
+
 A. It's fine, just change it so long as it's within your configured window of time for pulling down time entries.
 
 Q. I need to have a time entry span multiple ticket numbers / projects.
+
 A. Simple work around make multiple time entries to divide the time between and assign as needed, sorry I consider this a complex/rare scenario to handle with code alone. If you have a Meeting and discuss several issues, you could probably assign the time to a Meeting ticket in Active Collab?
 
 Q. What if a Project in Active Collab was moved to a different Client?
-A. Forget about it.
+   What if a Ticket in Active Collab was moved to a different Project?
+   What if a Ticket in Active Collab was deleted?
 
-Q. What if a Ticket in Active Collab was moved to a different Project?
-A. Forget About it.
-
-Q. What if a Ticket in Active Collab was deleted?
 A. Forget About it.
 
 Q. Something borked and my time entries are all messed up now.
+
 A. That sounds like a you problem. Good luck with that, as mentioned you use this program at your own risk.
 
 Q. Would you consider improving this to work with newer Active Collab versions possibly even for http://activecollab.com?
+
 A. Feel free to get in touch about it.
 
 Q. What is so great about Toggl anyway?
+
 A. Well personally, I love how easy it is to work with If I forget to stop/start a timer I can do it from my phone isn't that super.
 
 Q. Would you consider writing a program like this for other API's/Services?
+
 A. Feel free to get in touch about it.
 
 Q. I found a problem/bug/improvement.
+
 A. Great, due to the nature of Open Source and Github you can fork this repo and make a pull request. Please try to give a good and succinct description of the thing you want to improve.
 
 Q. How to make this run as a Daemon or Service?
+
 A. Well, I haven't put much thought into that yet.
 There are wrappers for Windows and Linux/Other service/daemon managers. Such as [os-service](https://www.npmjs.com/package/os-service).
 
 Q. There are no tests?
+
 A. "The real test is in Production" no really, don't use this in production without knowing it is untested software, it is not considered suitable for any purpose not even the one it was created for. It simply works for me and my use-case.
 
 Q. Can I write tests?
+
 A. Please do, knock your self out and submit a pull request. I would love to learn more about this side of software.
 
 Q. I have an issue with...?
+
 A. If it's something uber critical and it's not because of your configuration or API limitations/restrictions please provide more information. You could make an issue about it or possibly debug and fix with a pull request.
 
 Q. You missed a semi-colon;
+
 A. I'm actually attempting to use standard-js JavaScript Standard Style for this program.
 
 Q. Naming is inconsistent
+
 A. You may consider these terms interchangeable whilst reading this project.
 | A | B |
 | ---- | ---- |
@@ -178,7 +195,7 @@ Q. Was this fun to make?
 A. Yes quite, I went through several thoughts of it's design and decided I didn't need a database.
   
 # In closing  
-Timesheets are evil, of necessity of course, if you don't measure it you can't track it.
+Timesheets are evil, of necessity of course, “If you can’t measure it, you can’t improve it.”
 
 This is simply a glue between two software/services born out of frustration at doing it manually for several months. I finally snapped and wrote this program to automate it.
 
