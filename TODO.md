@@ -1,6 +1,10 @@
 # TODO
 ## Planned improvements.
 
+* Configurable catch all filters for project/ticket/term/tag etc to store time in a specific active collab project ticket.
+
+* Migrate existing time entries to new projects in new workspace.
+
 * A generated output of any failed to transfer and ignored/no issue number/ticket/project mapping found when syncing the time.
   
 ## Nice to haves / ideas.
