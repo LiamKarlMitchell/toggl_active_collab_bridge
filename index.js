@@ -1,4 +1,4 @@
-const moment = require('moment')
+const moment = require('moment-timezone')
 const path = require('path')
 
 const activeCollab = require('./MyActiveCollabClient')
@@ -591,6 +591,13 @@ async function SyncTimeEntries () {
       continue
     }
 
+    // Note: Time zone of input date/time is in UTC we should convert it to NZDT for ActiveCollab...
+    // TODO: Handle destination timezone, we can get this info as configured by user in /info endpoint?
+    // See here for info on dealing with timezones, thankfully my local timezone is the same as what Active Collab is expecting....
+    // https://stackoverflow.com/questions/15347589/moment-js-format-date-in-a-specific-timezone
+    var date = moment.tz(timeEntry.start, 'UTC').format('YYYY/MM/DD').tz(config.timezone || 'Pacific/Auckland')
+    timeEntry.date = date.format('YYYY/MM/DD')
+
     // If the time entry is currently running, then skip processing it for now.
     // If the time entry is currently running, the duration attribute contains a negative value, denoting the start of the time entry in seconds since epoch (Jan 1 1970).
     // The correct duration can be calculated as current_time + duration, where current_time is the current time in seconds since epoch.
@@ -686,12 +693,6 @@ async function SyncTimeEntries () {
     // TODO: Consider if we should round nearest minute (or 36 second interval)?
     // Such as:
     // duration = ((Math.round(39 / 36)*36)/3600).toFixed(2);
-
-    // Note: Time zone of input date/time is in UTC we should convert it to NZDT for ActiveCollab.
-    // TODO: Handle destination timezone, we can get this info as configured by user in /info endpoint?
-    // See here for info on dealing with timezones, thankfully my local timezone is the same as what Active Collab is expecting....
-    // https://stackoverflow.com/questions/15347589/moment-js-format-date-in-a-specific-timezone
-    var date = moment(timeEntry.start).format('YYYY/MM/DD')
 
     // Note: TODO: If previousTimeEntry at is older start of month we may want to do an additional check on it's status in activeCollab if billable or paid we wouldn't want to over-write it, this case should be an error.
 
@@ -1014,7 +1015,7 @@ function summarizeSyncResultCategory (syncResults, key) {
         clientName = clientMapping.activeCollabName
       }
     }
-    output += `${key} ${result.timeEntry.start} ${result.summary} ${clientName} ${projectName} #${result.timeEntry.issueNumber} ${result.timeEntry.description}\n`
+    output += `${key} ${result.timeEntry.date} ${result.summary} ${clientName} ${projectName} #${result.timeEntry.issueNumber} ${result.timeEntry.description}\n`
   })
 
   // TODO: I wish this output to CSV or HTML actually.

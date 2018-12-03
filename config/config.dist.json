@@ -4,6 +4,7 @@
   "TimeEntriesRetrieveDuration": {
     "weeks": 2
   },
+  "timezone": "Pacific/Auckland",
   "Toggl": {
     "token": "togglAPITokenGoesHere",
     "workspace": "ExampleWorkspace",
