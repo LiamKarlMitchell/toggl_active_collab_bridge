@@ -538,7 +538,7 @@ async function applyRedirectFilter (timeEntry, previousTimeEntry) {
   if (config.redirectFilters) {
     config.redirectFilters.some(filter => {
       // Check if the pattern would not be matched by.
-      if (Array.isArray(timeEntry.tags) && timeEntry.tags.includes("DEBUG")) {
+      if (Array.isArray(timeEntry.tags) && timeEntry.tags.includes('DEBUG')) {
         debugger
       }
 
@@ -578,7 +578,7 @@ async function applyRedirectFilter (timeEntry, previousTimeEntry) {
           return false
         } else if (Array.isArray(filter.tags)) {
           if (filter.tags.reduce((accumulator, tag) => {
-            return (timeEntry.tags.indexOf(tag) > -1) ? accumulator+1 : accumulator
+            return (timeEntry.tags.indexOf(tag) > -1) ? accumulator + 1 : accumulator
           }, 0) !== filter.tags.length) {
             return false
           }
@@ -675,6 +675,32 @@ async function SyncTimeEntries () {
 
     let previousTimeEntryMapping = timeMappings.getRecord(timeEntry.id)
 
+    let deletePreviousTimeEntryMapping = async (deleteMappingRecord = true) => {
+      if (previousTimeEntryMapping === null || previousTimeEntryMapping === undefined) {
+        return
+      }
+
+      try {
+        if (argv.verbose) {
+          console.log(`Deleting previous time entry: ${previousTimeEntryMapping.date} ${previousTimeEntryMapping.issueNumber} ${previousTimeEntryMapping.summary}`)
+        }
+
+        // Remove the previous time entry from Active Collab.
+        await activeCollab.timeDelete(
+          previousTimeEntryMapping.activeCollabProjectId,
+          previousTimeEntryMapping.issueNumber,
+          previousTimeEntryMapping.activeCollabId
+        )
+      } catch (error) {
+        console.error(`Failed to delete previous time entry mapping: ${previousTimeEntryMapping.date} ${previousTimeEntryMapping.issueNumber} ${previousTimeEntryMapping.summary}`, error)
+      }
+
+      if (deleteMappingRecord) {
+        // And from our mappings.
+        await timeMappings.delete(previousTimeEntryMapping.togglId)
+      }
+    }
+
     // TODO: get last time entry mapping if possible.
     // timeEntry.id
     // Get the Project mapping if any.
@@ -684,6 +710,7 @@ async function SyncTimeEntries () {
     }
 
     if (timeEntry.wid !== config.Toggl.workspaceId) {
+      await deletePreviousTimeEntryMapping()
       syncResults.ignored.push({
         summary: 'Not in workspace.',
         timeEntry: timeEntry
@@ -699,6 +726,7 @@ async function SyncTimeEntries () {
     // If the time entry is currently running, the duration attribute contains a negative value, denoting the start of the time entry in seconds since epoch (Jan 1 1970).
     // The correct duration can be calculated as current_time + duration, where current_time is the current time in seconds since epoch.
     if (timeEntry.duration < 0) {
+      await deletePreviousTimeEntryMapping()
       syncResults.ignored.push({
         summary: `Time entry is currently running: ${timeEntry.id}.`,
         timeEntry: timeEntry
@@ -711,7 +739,7 @@ async function SyncTimeEntries () {
       timeEntry.description = ''
     }
 
-    if (Array.isArray(timeEntry.tags) && timeEntry.tags.includes("DEBUG")) {
+    if (Array.isArray(timeEntry.tags) && timeEntry.tags.includes('DEBUG')) {
       debugger
     }
 
@@ -722,6 +750,7 @@ async function SyncTimeEntries () {
     }
 
     if (timeEntry.tid) {
+      await deletePreviousTimeEntryMapping()
       syncResults.ignored.push({
         summary:
           'Time Entries with a task id are not yet implemented in the sync.',
@@ -762,6 +791,7 @@ async function SyncTimeEntries () {
     var activeCollabUserId =
       config.togglToActiveCollabUserMapping[timeEntry.uid]
     if (activeCollabUserId === undefined) {
+      await deletePreviousTimeEntryMapping()
       syncResults.failed.push({
         summary: `User ID mapping not found for Time Entry UID: ${
           timeEntry.uid
@@ -793,19 +823,8 @@ async function SyncTimeEntries () {
       }
 
       if (timeEntry.skip) {
-        // TODO: Apply this same logic if a time entry is ignored but has a previous time entry mapping (delete the previous time entry mapping.)
         // If we are going to skip the time entry then we should delete the previous time entry mapping if one exists.
-        if (previousTimeEntryMapping) {
-          // Remove the previous time entry from Active Collab.
-          await activeCollab.timeDelete(
-            previousTimeEntryMapping.activeCollabProjectId,
-            previousTimeEntryMapping.issueNumber,
-            previousTimeEntryMapping.activeCollabId
-          )
-
-          // And from our mappings.
-          await timeMappings.delete(previousTimeEntryMapping.togglId)
-        }
+        await deletePreviousTimeEntryMapping()
 
         syncResults.ignored.push({
           summary: 'Skipped.',
@@ -816,6 +835,7 @@ async function SyncTimeEntries () {
     } else {
       // If no filter result.
       if (!timeEntry.pid) {
+        await deletePreviousTimeEntryMapping()
         syncResults.ignored.push({
           summary: 'No project set.',
           timeEntry: timeEntry
@@ -825,6 +845,7 @@ async function SyncTimeEntries () {
     }
 
     if (!projectMapping) {
+      await deletePreviousTimeEntryMapping()
       syncResults.failed.push({
         summary: 'Project not found in mapping.',
         timeEntry: timeEntry
@@ -837,6 +858,7 @@ async function SyncTimeEntries () {
     }
 
     if (activeCollabSummary === '') {
+      await deletePreviousTimeEntryMapping()
       syncResults.ignored.push({
         summary: 'No description.',
         timeEntry: timeEntry
@@ -845,6 +867,7 @@ async function SyncTimeEntries () {
     }
 
     if (timeEntry.issueNumber === undefined || timeEntry.issueNumber === null) {
+      await deletePreviousTimeEntryMapping()
       syncResults.failed.push({
         summary: 'No issue number.',
         timeEntry: timeEntry
@@ -860,6 +883,7 @@ async function SyncTimeEntries () {
 
     var task = projectTasks[timeEntry.issueNumber]
     if (!task) {
+      await deletePreviousTimeEntryMapping()
       syncResults.failed.push({
         summary: `Task not found in in Active Collab for ${timeEntry.issueNumber} project ${projectMapping.activeCollabName}`,
         timeEntry: timeEntry
@@ -958,8 +982,12 @@ async function SyncTimeEntries () {
 
             // Also storing the result from active collab just in-case.
             timeTrackingMapping.activeCollabResult = trackingResult
+
+            // Store the time mapping.
+            await timeMappings.store(timeEntry.id, timeTrackingMapping)
           } catch (error) {
             console.error(error)
+            await deletePreviousTimeEntryMapping(false)
             syncResults.failed.push({
               summary: `Error from Active Collab when updating a time tracking record. ${error}`,
               timeEntry: timeEntry
@@ -967,8 +995,6 @@ async function SyncTimeEntries () {
             continue
           }
 
-          // Store the time mapping.
-          await timeMappings.store(timeEntry.id, timeTrackingMapping)
           continue
         } else {
           // No Change in the time entry we would record in Active collab.
@@ -993,13 +1019,8 @@ async function SyncTimeEntries () {
             )
           }
 
-          await activeCollab.timeDelete(
-            previousTimeEntryMapping.activeCollabProjectId,
-            previousTimeEntryMapping.issueNumber,
-            previousTimeEntryMapping.activeCollabId
-          )
-
           // Note: Intentionally not removing from mapping as we will over-write it next with a create new time entry action.
+          deletePreviousTimeEntryMapping(false)
         } catch (error) {
           console.error(error)
           syncResults.failed.push({
