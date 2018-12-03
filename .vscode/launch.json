@@ -10,6 +10,13 @@
       "name": "Launch",
       "program": "${workspaceFolder}\\index.js",
       "cwd": "${workspaceFolder}"
+    },
+    {
+      "type": "node",
+      "request": "launch",
+      "name": "Launch Migrate Workspaces",
+      "program": "${workspaceFolder}\\migrateWorkspaces.js",
+      "cwd": "${workspaceFolder}"
     }
   ]
 }
