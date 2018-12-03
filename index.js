@@ -138,6 +138,22 @@ async function ConfigCheck () {
       "Expecting config.togglToActiveCollabUserMapping to map the Toggl User ID's to Active Collab User ID's.\nExample: { \"4118110\": 315 }"
     )
   }
+
+  if (config.redirectFilters !== undefined) {
+    if (Array.isArray(config.redirectFilters) === false) {
+      throw new Error('Expecting config.redirectFilters if set to be an array.')
+    }
+
+    config.redirectFilters.forEach(filter => {
+      if (filter.targetIssueNumber === undefined) {
+        if (filter.skipTimeEntryIfMatched) {
+          // It's okay.
+        } else {
+          throw new Error('Expecting redirect filter to have a targetIssueNumber set.')
+        }
+      }
+    })
+  }
 }
 
 /**
@@ -518,6 +534,90 @@ async function getActiveCollabProjectTasks (activeCollabProjectId) {
 
 /* Helper Methods to sync to Active Collab from Toggl. */
 
+async function applyRedirectFilter (timeEntry, previousTimeEntry) {
+  if (config.redirectFilters) {
+    config.redirectFilters.some(filter => {
+      // Check if the pattern would not be matched by.
+      if (Array.isArray(timeEntry.tags) && timeEntry.tags.includes("DEBUG")) {
+        debugger
+      }
+
+      // Pattern.
+      if (filter.pattern && timeEntry.description.match(filter.pattern) === null) {
+        return false
+      }
+
+      // TogglProjectId wild card or exact match.
+      if (filter.togglProjectId && !(filter.toggglProjectId === '*' || timeEntry.pid === filter.togglProjectId)) {
+        return false
+      }
+
+      // ProjectID wild card or exact match.
+      if (filter.activeCollabProjectId && !(filter.activeCollabProjectId === '*' || timeEntry.activeCollabProjectId === filter.activeCollabProjectId)) {
+        return false
+      }
+
+      // Project ID in array.
+      if (filter.projects && Array.isArray(filter.projects) && filter.projects.includes(timeEntry.activeCollabProjectId) === false) {
+        return false
+      }
+
+      if (filter.issueNumber !== undefined) {
+        if (filter.issueNumber === null) {
+          if (timeEntry.issueNumber !== null && timeEntry.issueNumber !== undefined) {
+            return false
+          }
+        } else if (timeEntry.issueNumber !== filter.issueNumber) {
+          return false
+        }
+      }
+
+      // Includes tag from
+      if (filter.tags) {
+        if (Array.isArray(timeEntry.tags) === false) {
+          return false
+        } else if (Array.isArray(filter.tags)) {
+          if (filter.tags.reduce((accumulator, tag) => {
+            return (timeEntry.tags.indexOf(tag) > -1) ? accumulator+1 : accumulator
+          }, 0) !== filter.tags.length) {
+            return false
+          }
+        } else if (timeEntry.tags.includes(filter.tags) === false) {
+          return false
+        }
+      }
+
+      if (filter.excludeTags && timeEntry.tags) {
+        if (Array.isArray(filter.excludeTags) && filter.excludeTags.some(tag => {
+          return timeEntry.tags.includes(tag)
+        }) === true) {
+          return false
+        }
+      }
+
+      if (filter.skipTimeEntryIfMatched) {
+        timeEntry.skip = true
+      }
+
+      // Fail if error on billable is set to true and timeEntry is marked as billable.
+      if (filter.errorOnBillable === true && timeEntry.billable === true) {
+        // Fail as billable would have been met by this filter.
+        throw new Error('Filter error on billable.')
+      }
+
+      // Over-ride values with the target values.
+      if (filter.targetProjectId) {
+        timeEntry.activeCollabProjectId = filter.targetProjectId
+      }
+      timeEntry.issueNumber = filter.targetIssueNumber
+      timeEntry.redirectFilterApplied = true
+
+      // Exit this loop as a filter is applied.
+      return true
+    })
+  }
+}
+
 // Note: The TogglAPI may impose a rate limit I saw the following in their documentation.
 // I have not actually encountered a limit however.
 // TogglAPI: For rate limiting we have implemented a Leaky bucket.
@@ -591,11 +691,8 @@ async function SyncTimeEntries () {
       continue
     }
 
-    // Note: Time zone of input date/time is in UTC we should convert it to NZDT for ActiveCollab...
-    // TODO: Handle destination timezone, we can get this info as configured by user in /info endpoint?
-    // See here for info on dealing with timezones, thankfully my local timezone is the same as what Active Collab is expecting....
-    // https://stackoverflow.com/questions/15347589/moment-js-format-date-in-a-specific-timezone
-    var date = moment.tz(timeEntry.start, 'UTC').format('YYYY/MM/DD').tz(config.timezone || 'Pacific/Auckland')
+    // Parse the start date from Active Collab as UTC then change timezone to configured for storing in Active Collab.
+    var date = moment.tz(timeEntry.start, 'UTC').tz(config.timezone || 'Pacific/Auckland')
     timeEntry.date = date.format('YYYY/MM/DD')
 
     // If the time entry is currently running, then skip processing it for now.
@@ -611,53 +708,18 @@ async function SyncTimeEntries () {
 
     // No description. Get outa here, we need a description to get the Ticket ID.
     if (!timeEntry.description) {
-      syncResults.ignored.push({
-        summary: 'No description.',
-        timeEntry: timeEntry
-      })
-      continue
+      timeEntry.description = ''
+    }
+
+    if (Array.isArray(timeEntry.tags) && timeEntry.tags.includes("DEBUG")) {
+      debugger
     }
 
     // Get the Issue # out of the time entry description.
-    let issueNumber = null
     var match = timeEntry.description.match(/#(\d+)/)
-    if (match === null) {
-      syncResults.failed.push({
-        summary: 'No issue number.',
-        timeEntry: timeEntry
-      })
-      continue
-    } else {
-      issueNumber = match[1] * 1
-      timeEntry.issueNumber = issueNumber
+    if (match !== null) {
+      timeEntry.issueNumber = match[1] * 1
     }
-
-    if (!timeEntry.pid) {
-      syncResults.ignored.push({
-        summary: 'No project set.',
-        timeEntry: timeEntry
-      })
-      continue
-    }
-
-    let projectMapping = projectMappings.getRecord(timeEntry.pid)
-    if (!projectMapping) {
-      syncResults.failed.push({
-        summary: 'Project not found in mapping.',
-        timeEntry: timeEntry
-      })
-      continue
-    }
-
-    if (argv.verbose > 5) {
-      console.log(`Project Mapping found ${projectMapping.activeCollabName}.`)
-    }
-
-    // Get active collab project tasks as needed.
-    // This is cached.
-    var projectTasks = await getActiveCollabProjectTasks(
-      projectMapping.activeCollabProjectId
-    )
 
     if (timeEntry.tid) {
       syncResults.ignored.push({
@@ -709,10 +771,97 @@ async function SyncTimeEntries () {
       continue
     }
 
-    var task = projectTasks[issueNumber]
+    // Map to a project if possible.
+    let projectMapping = projectMappings.getRecord(timeEntry.pid)
+    if (projectMapping) {
+      timeEntry.activeCollabProjectId = projectMapping.activeCollabProjectId
+    }
+
+    // Apply redirection filters if any.
+    await applyRedirectFilter(timeEntry, previousTimeEntryMapping)
+
+    if (timeEntry.redirectFilterApplied) {
+      if (argv.verbose > 1) {
+        console.log(`TimeEntry has a redirect filter applied.`)
+      }
+
+      if ((projectMapping === null) || (projectMapping.id !== timeEntry.activeCollabProjectid)) {
+        // Get pid based off the filters applied activeCollabProjectId.
+        projectMapping = projectMappings.find((_projectMapping) => {
+          return _projectMapping.activeCollabProjectId === timeEntry.activeCollabProjectId
+        })
+      }
+
+      if (timeEntry.skip) {
+        // TODO: Apply this same logic if a time entry is ignored but has a previous time entry mapping (delete the previous time entry mapping.)
+        // If we are going to skip the time entry then we should delete the previous time entry mapping if one exists.
+        if (previousTimeEntryMapping) {
+          // Remove the previous time entry from Active Collab.
+          await activeCollab.timeDelete(
+            previousTimeEntryMapping.activeCollabProjectId,
+            previousTimeEntryMapping.issueNumber,
+            previousTimeEntryMapping.activeCollabId
+          )
+
+          // And from our mappings.
+          await timeMappings.delete(previousTimeEntryMapping.togglId)
+        }
+
+        syncResults.ignored.push({
+          summary: 'Skipped.',
+          timeEntry: timeEntry
+        })
+        continue
+      }
+    } else {
+      // If no filter result.
+      if (!timeEntry.pid) {
+        syncResults.ignored.push({
+          summary: 'No project set.',
+          timeEntry: timeEntry
+        })
+        continue
+      }
+    }
+
+    if (!projectMapping) {
+      syncResults.failed.push({
+        summary: 'Project not found in mapping.',
+        timeEntry: timeEntry
+      })
+      continue
+    }
+
+    if (argv.verbose > 5) {
+      console.log(`Project Mapping found ${projectMapping.activeCollabName}.`)
+    }
+
+    if (activeCollabSummary === '') {
+      syncResults.ignored.push({
+        summary: 'No description.',
+        timeEntry: timeEntry
+      })
+      continue
+    }
+
+    if (timeEntry.issueNumber === undefined || timeEntry.issueNumber === null) {
+      syncResults.failed.push({
+        summary: 'No issue number.',
+        timeEntry: timeEntry
+      })
+      continue
+    }
+
+    // Get active collab project tasks as needed.
+    // This is cached.
+    var projectTasks = await getActiveCollabProjectTasks(
+      projectMapping.activeCollabProjectId
+    )
+
+    var task = projectTasks[timeEntry.issueNumber]
     if (!task) {
       syncResults.failed.push({
-        summary: `Task not found in in Active Collab for ${issueNumber} project ${projectMapping.activeCollabName}`,
+        summary: `Task not found in in Active Collab for ${timeEntry.issueNumber} project ${projectMapping.activeCollabName}`,
         timeEntry: timeEntry
       })
       continue
@@ -732,7 +881,7 @@ async function SyncTimeEntries () {
     // visibility: 1
     if (task.isLocked) {
       console.warn(
-        `Task ${issueNumber} is locked in Active Collab project ${projectMapping.activeCollabName} ${
+        `Task ${timeEntry.issueNumber} is locked in Active Collab project ${projectMapping.activeCollabName} ${
           task.id
         } ${task.name}`
       )
@@ -742,7 +891,7 @@ async function SyncTimeEntries () {
     var timeTrackingMapping = {
       togglId: timeEntry.id,
 
-      date: date,
+      date: date.format('YYYY/MM/DD'),
       summary: activeCollabSummary,
       at: timeEntry.at,
       billable: billable,
@@ -751,7 +900,7 @@ async function SyncTimeEntries () {
       activeCollabId: null,
       activeCollabUserId: activeCollabUserId, // TODO: Handle multiple user id's.
       activeCollabProjectId: projectMapping.activeCollabProjectId,
-      issueNumber: issueNumber,
+      issueNumber: timeEntry.issueNumber,
 
       // Just in-case include the time entry. This would most likely break our mapping check for if needing to update on disk...
       source: timeEntry,
@@ -764,14 +913,14 @@ async function SyncTimeEntries () {
       if (
         previousTimeEntryMapping.activeCollabProjectId ===
           projectMapping.activeCollabProjectId &&
-        previousTimeEntryMapping.issueNumber === issueNumber
+        previousTimeEntryMapping.issueNumber === timeEntry.issueNumber
       ) {
         // And at least one of the fields we care about has changed.
         // Then trigger an update.
         if (
           previousTimeEntryMapping.summary !== activeCollabSummary ||
           previousTimeEntryMapping.duration !== duration ||
-          previousTimeEntryMapping.date !== date ||
+          previousTimeEntryMapping.date !== date.format('YYYY/MM/DD') ||
           previousTimeEntryMapping.billable !== billable
         ) {
           // We need to update the time entry.
@@ -784,21 +933,21 @@ async function SyncTimeEntries () {
               console.log(
                 `Updating time entry on ${
                   projectMapping.activeCollabName
-                } #${issueNumber} ${
+                } #${timeEntry.issueNumber} ${
                   task.name
-                } ${activeCollabSummary} ${date} ${duration}.`
+                } ${activeCollabSummary} ${date.format('YYYY/MM/DD')} ${duration}.`
               )
             }
 
             var trackingResult = await activeCollab.timeEdit(
               projectMapping.activeCollabProjectId,
-              issueNumber,
+              timeEntry.issueNumber,
               previousTimeEntryMapping.activeCollabId,
               {
                 user_id: activeCollabUserId, // TODO: Handle multiple user id's.
                 summary: activeCollabSummary,
                 job_type_id: 1, // TODO: Job Types? No idea how to handle this maybe based off a tag or key word being present in the description.
-                record_date: date,
+                record_date: date.format('YYYY/MM/DD'),
                 value: duration,
                 billable_status: billable ? 1 : 0
               }
@@ -874,7 +1023,7 @@ async function SyncTimeEntries () {
       console.log(
         `Creating time entry on ${projectMapping.activeCollabName} #${task.id} ${
           task.name
-        } ${activeCollabSummary} ${date} ${duration}.`
+        } ${activeCollabSummary} ${date.format('YYYY/MM/DD')} ${duration}.`
       )
     }
 
@@ -885,12 +1034,12 @@ async function SyncTimeEntries () {
     try {
       trackingResult = await activeCollab.timeAdd(
         projectMapping.activeCollabProjectId,
-        issueNumber,
+        timeEntry.issueNumber,
         {
           user_id: activeCollabUserId, // TODO: Handle multiple user id's.
           summary: activeCollabSummary,
           job_type_id: 1, // TODO: Job Types? No idea how to handle this maybe based off a tag or key word being present in the description.
-          record_date: date,
+          record_date: date.format('YYYY/MM/DD'),
           value: duration,
           billable_status: billable ? 1 : 0
         }
@@ -1000,7 +1149,8 @@ function summarizeSyncResultCategory (syncResults, key) {
 
   var output = `Summary of ${key} results: ${results.length}\n`
   results.forEach((result) => {
-    if (result.summary === 'Time entry unchanged.') {
+    // Ignore summarys we do not care about showing.
+    if (result.summary === 'Time entry unchanged.' || result.summary === 'Skipped.') {
       return
     }
 
