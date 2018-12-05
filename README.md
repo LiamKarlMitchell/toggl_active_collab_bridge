@@ -62,6 +62,25 @@ To view the Token and API URL click on the Magnifyer + button.
 
 Ensure Time Zone is set in your profile settings.
 
+## User Mapping
+
+Get your User ID from Active Collab and Toggl.
+You can find this in the end of the Profile URL on Active Collab.
+
+On Toggl you have to dig a little deeper.
+
+Visiting this link will show you your Toggl User ID.
+https://www.toggl.com/api/v8/me
+
+We need to define a togglToActiveCollabUserMapping in the config
+
+Example of user mapping.
+```
+"togglToActiveCollabUserMapping": {
+  "yourTogglID": "yourActiveCollabId"
+},
+```
+
 ## Workflow
 When entering time entries into Toggl you should.
 1. Choose the appropriate Project and be working in the configured Workspace.
