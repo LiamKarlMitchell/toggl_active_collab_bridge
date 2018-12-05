@@ -16,26 +16,8 @@ var TimeEntriesRetrieveDuration = moment.duration(
 )
 
 const TogglMapping = require('./TogglMapping')
-var timeMappings = new TogglMapping(
-  path.join(config.DataDirectory, 'MappedRecords'),
-  'time',
-  {
-    // TODO: Deletion of old file records.
-    // Delete old records that we are not interested in after 2 months?
-    // Base this off the date timestamp stored in file name?
-    // deleteAfter: { months: 2 }
-  }
-)
 
-var clientMappings = new TogglMapping(
-  path.join(config.DataDirectory, 'MappedRecords'),
-  'client'
-)
-
-var projectMappings = new TogglMapping(
-  path.join(config.DataDirectory, 'MappedRecords'),
-  'project'
-)
+const { timeMappings, clientMappings, projectMappings } = require('./MyMappings')
 
 const NodeCache = require('node-cache')
 const projectTasksCache = new NodeCache({
@@ -1091,6 +1073,11 @@ async function SyncTimeEntries () {
 
             await fireTagEvents(timeEntryMapping, previousTimeEntryMapping)
 
+            syncResults.synced.push({
+              summary: ``,
+              timeEntry: timeEntry
+            })
+
             // Store the time mapping.
             await timeMappings.store(timeEntry.id, timeEntryMapping)
           } catch (error) {
@@ -1181,6 +1168,11 @@ async function SyncTimeEntries () {
       await eventEmitter.emit('timeAddded', { mapping: timeEntryMapping, previousMapping: previousTimeEntryMapping, projectMapping: projectMapping })
 
       await fireTagEvents(timeEntryMapping, previousTimeEntryMapping)
+
+      syncResults.synced.push({
+        summary: ``,
+        timeEntry: timeEntry
+      })
 
       // Store the time mapping.
       await timeMappings.store(timeEntry.id, timeEntryMapping)
