@@ -1266,7 +1266,7 @@ async function SyncTimeEntries () {
   console.timeEnd('SyncTimeEntries')
 
   await eventEmitter.emit('timeEntrySyncResults', syncResults)
-
+  
   console.log(`
   Failed: ${syncResults.failed.length}
   Deleted: ${syncResults.deleted.length}
