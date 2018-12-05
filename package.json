@@ -22,6 +22,7 @@
   "author": "Liam Mitchell",
   "license": "MIT",
   "dependencies": {
+    "await-event-emitter": "^1.2.0",
     "bluebird": "^3.5.3",
     "deep-equal": "^1.0.1",
     "exceljs": "^1.6.2",

@@ -53,6 +53,7 @@ class ActiveCollabClient {
     })
   }
 
+  // Note: A submitted property set to submitted is required for a majority of things.
   postFormData (path, content) {
     return rp({
       method: 'POST',

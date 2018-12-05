@@ -9,6 +9,8 @@ const AsyncSingleInstance = require('./AsyncSingleInstance')
 const config = require('./MyConfig')
 const argv = require('./MyCommandLineArguments')
 
+const eventEmitter = require('./MyEventEmitter')
+
 var TimeEntriesRetrieveDuration = moment.duration(
   config.TimeEntriesRetrieveDuration || { weeks: 2 }
 )
@@ -61,11 +63,39 @@ const singleInstanceSyncTimeEntries = new AsyncSingleInstance(SyncTimeEntries)
 // The sequental calling and order of these operations is intended.
 async function Main () {
   await ConfigCheck()
+  await LoadPlugins()
   await LoadMappings()
+  await eventEmitter.emit('startup')
   await singleInstanceSyncCompanies.run()
   await singleInstanceSyncProjects.run()
   await singleInstanceSyncTimeEntries.run()
   await InitScheduledTasks()
+}
+
+const plugins = []
+async function LoadPlugins () {
+  if (config.plugins) {
+    Object.entries(config.plugins).forEach(
+      ([pluginName, pluginConfig]) => {
+        var scriptName = pluginName
+        pluginConfig.name = pluginName
+
+        // Allow for multiple plugin config entries to exist.
+        if (pluginConfig.scriptName) {
+          scriptName = pluginConfig.scriptName
+        }
+
+        if (pluginConfig.enabled) {
+          console.log(`Loading Plugin: ${pluginName}`)
+          var plugin = require('./plugins/' + scriptName)
+          if (plugin.init instanceof Function) {
+            plugin.init(pluginConfig)
+          }
+          plugins.push(plugin)
+        }
+      }
+    )
+  }
 }
 
 async function ConfigCheck () {
@@ -536,12 +566,11 @@ async function getActiveCollabProjectTasks (activeCollabProjectId) {
 
 async function applyRedirectFilter (timeEntry, previousTimeEntry) {
   if (config.redirectFilters) {
-    config.redirectFilters.some(filter => {
-      // Check if the pattern would not be matched by.
-      if (Array.isArray(timeEntry.tags) && timeEntry.tags.includes('DEBUG')) {
-        debugger
-      }
+    // if (Array.isArray(timeEntry.tags) && timeEntry.tags.includes('DEBUG')) {
+    //   debugger
+    // }
 
+    config.redirectFilters.some(filter => {
       // Pattern.
       if (filter.pattern && timeEntry.description.match(filter.pattern) === null) {
         return false
@@ -618,6 +647,50 @@ async function applyRedirectFilter (timeEntry, previousTimeEntry) {
   }
 }
 
+async function fireTagEvents (timeEntryMapping, previousTimeEntryMapping) {
+  // Get new and previous tags if set.
+  var newTags = timeEntryMapping.tags
+  var previousTags = previousTimeEntryMapping ? previousTimeEntryMapping.tags : []
+  // Work around tags not being set, if no tags set Toggl's tags key is not present.
+  if (newTags === undefined) {
+    newTags = []
+  }
+  if (previousTags === undefined) {
+    previousTags = []
+  }
+
+  // Fire an event of tagAdded if a tag in newTags is not present in previousTags.
+  // Fire an event of tagRemoved if a tag in previousTags is not present in newTags.
+  newTags = newTags.reduce((obj, tag) => {
+    obj[tag] = true
+    return obj
+  }, {})
+  previousTags = previousTags.reduce((obj, tag) => {
+    obj[tag] = true
+    return obj
+  }, {})
+
+  for (let tag in previousTags) {
+    if (newTags[tag] === undefined) {
+      try {
+        await eventEmitter.emit('tagRemoved', { tag: tag, mapping: timeEntryMapping, previousMapping: previousTimeEntryMapping })
+      } catch (error) {
+        console.error(`Error executing tagRemoved event: `, error)
+      }
+    }
+  }
+
+  for (let tag in newTags) {
+    if (previousTags[tag] === undefined) {
+      try {
+        await eventEmitter.emit('tagAdded', { tag: tag, mapping: timeEntryMapping, previousMapping: previousTimeEntryMapping })
+      } catch (error) {
+        console.error(`Error executing tagadded event: `, error)
+      }
+    }
+  }
+}
+
 // Note: The TogglAPI may impose a rate limit I saw the following in their documentation.
 // I have not actually encountered a limit however.
 // TogglAPI: For rate limiting we have implemented a Leaky bucket.
@@ -656,13 +729,17 @@ async function SyncTimeEntries () {
       )
     }
 
+    syncResults.fromMoment = fromMoment
+    syncResults.toMoment = startMoment
     var timeEntries = await toggl.getTimeEntriesAsync(
       fromMoment.toISOString(),
       startMoment.toISOString()
     )
   } catch (error) {
+    console.timeEnd('SyncTimeEntries')
     syncResults.error = error
     console.error('Failed to get time entries.', error)
+    await eventEmitter.emit('timeEntrySyncResults', syncResults)
     return syncResults
   }
 
@@ -739,9 +816,9 @@ async function SyncTimeEntries () {
       timeEntry.description = ''
     }
 
-    if (Array.isArray(timeEntry.tags) && timeEntry.tags.includes('DEBUG')) {
-      debugger
-    }
+    // if (Array.isArray(timeEntry.tags) && timeEntry.tags.includes('DEBUG')) {
+    //   debugger
+    // }
 
     // Get the Issue # out of the time entry description.
     var match = timeEntry.description.match(/#(\d+)/)
@@ -912,7 +989,7 @@ async function SyncTimeEntries () {
     }
 
     // Template what we can on our time tracking mapping for storing if we add/update the record.
-    var timeTrackingMapping = {
+    var timeEntryMapping = {
       togglId: timeEntry.id,
 
       date: date.format('YYYY/MM/DD'),
@@ -926,9 +1003,16 @@ async function SyncTimeEntries () {
       activeCollabProjectId: projectMapping.activeCollabProjectId,
       issueNumber: timeEntry.issueNumber,
 
+      // Store the tags ensure they are sorted, empty array if not set.
+      tags: timeEntry.tags !== undefined ? timeEntry.tags.sort() : [],
+
       // Just in-case include the time entry. This would most likely break our mapping check for if needing to update on disk...
       source: timeEntry,
       activeCollabResult: null
+    }
+
+    if (timeEntryMapping.tags.includes('DEBUG')) {
+      debugger
     }
 
     // If the time entry is still for the same project & issue number as previously mapped.
@@ -939,13 +1023,30 @@ async function SyncTimeEntries () {
           projectMapping.activeCollabProjectId &&
         previousTimeEntryMapping.issueNumber === timeEntry.issueNumber
       ) {
+        // Check tags.
+        // A work-around for old data not including tags array can probably remove it in the future.
+        var previousTags = previousTimeEntryMapping.tags || []
+        var tagsChanged = false
+        if (previousTags.length !== timeEntryMapping.tags.length) {
+          tagsChanged = true
+        } else {
+          // The tags arrays have same length check if entries are different. Is sorted so should be fine.
+          for (let i = 0; i < timeEntryMapping.tags.length; i++) {
+            if (previousTags[i] !== timeEntryMapping.tags[i]) {
+              tagsChanged = true
+              break
+            }
+          }
+        }
+
         // And at least one of the fields we care about has changed.
         // Then trigger an update.
         if (
           previousTimeEntryMapping.summary !== activeCollabSummary ||
           previousTimeEntryMapping.duration !== duration ||
           previousTimeEntryMapping.date !== date.format('YYYY/MM/DD') ||
-          previousTimeEntryMapping.billable !== billable
+          previousTimeEntryMapping.billable !== billable ||
+          tagsChanged === true
         ) {
           // We need to update the time entry.
 
@@ -978,13 +1079,17 @@ async function SyncTimeEntries () {
             )
 
             // Update the id just in-case. Although in reality it should not have changed.
-            timeTrackingMapping.activeCollabId = trackingResult.id
+            timeEntryMapping.activeCollabId = trackingResult.id
 
             // Also storing the result from active collab just in-case.
-            timeTrackingMapping.activeCollabResult = trackingResult
+            timeEntryMapping.activeCollabResult = trackingResult
+
+            await eventEmitter.emit('timeUpdated', { mapping: timeEntryMapping, previousMapping: previousTimeEntryMapping, projectMapping: projectMapping })
+
+            await fireTagEvents(timeEntryMapping, previousTimeEntryMapping)
 
             // Store the time mapping.
-            await timeMappings.store(timeEntry.id, timeTrackingMapping)
+            await timeMappings.store(timeEntry.id, timeEntryMapping)
           } catch (error) {
             console.error(error)
             await deletePreviousTimeEntryMapping(false)
@@ -1066,9 +1171,16 @@ async function SyncTimeEntries () {
         }
       )
 
-      timeTrackingMapping.activeCollabId = trackingResult.id
+      timeEntryMapping.activeCollabId = trackingResult.id
       // Also storing the result from active collab just in-case.
-      timeTrackingMapping.activeCollabResult = trackingResult
+      timeEntryMapping.activeCollabResult = trackingResult
+
+      await eventEmitter.emit('timeAddded', { mapping: timeEntryMapping, previousMapping: previousTimeEntryMapping, projectMapping: projectMapping })
+
+      await fireTagEvents(timeEntryMapping, previousTimeEntryMapping)
+
+      // Store the time mapping.
+      await timeMappings.store(timeEntry.id, timeEntryMapping)
     } catch (error) {
       if (argv.verbose) {
         console.error(error)
@@ -1079,9 +1191,6 @@ async function SyncTimeEntries () {
       })
       continue
     }
-
-    // Store the time mapping.
-    await timeMappings.store(timeEntry.id, timeTrackingMapping)
   }
 
   // Reduce the array of id's to an object key with true value for fast checks.
@@ -1122,7 +1231,7 @@ async function SyncTimeEntries () {
     }
 
     // Then delete it from ActiveCollab.
-    try {
+    try {      
       await activeCollab.timeDelete(
         oldTimeEntry.activeCollabProjectId,
         oldTimeEntry.issueNumber,
@@ -1147,9 +1256,13 @@ async function SyncTimeEntries () {
         timeEntry: oldTimeEntry
       })
     }
+
+    await eventEmitter.emit('timeDeleted', { mapping: oldTimeEntry })
   })
 
   console.timeEnd('SyncTimeEntries')
+
+  await eventEmitter.emit('timeEntrySyncResults', syncResults)
 
   console.log(`
   Failed: ${syncResults.failed.length}
