@@ -886,13 +886,16 @@ async function SyncTimeEntries () {
 
     // Apply redirection filters if any.
     await applyRedirectFilter(timeEntry, previousTimeEntryMapping)
+    eventEmitter.emit('applyRedirectFilter', { mapping: timeEntry, previousMapping: previousTimeEntryMapping })
 
     if (timeEntry.redirectFilterApplied) {
       if (argv.verbose > 1) {
         console.log(`TimeEntry has a redirect filter applied.`)
       }
 
-      if ((projectMapping === null) || (projectMapping.id !== timeEntry.activeCollabProjectid)) {
+      if (projectMapping === null ||
+        projectMapping === undefined ||
+        projectMapping.id !== timeEntry.activeCollabProjectid) {
         // Get pid based off the filters applied activeCollabProjectId.
         projectMapping = projectMappings.find((_projectMapping) => {
           return _projectMapping.activeCollabProjectId === timeEntry.activeCollabProjectId
