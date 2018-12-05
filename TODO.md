@@ -1,3 +1,5 @@
+Delete this file soon, moving to using github issues and project.
+
 # TODO
 ## Planned improvements.
 
