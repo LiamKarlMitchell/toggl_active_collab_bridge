@@ -1,7 +1,10 @@
 const events = require('../MyEventEmitter')
 const activeCollab = require('../MyActiveCollabClient')
 const config = require('../MyConfig')
-const fsPromises = require('fs').promises
+const fs = require('fs') // Note: As of Node.js v10.0.0 there are fsPromises available through promises method.
+const Promise = require('bluebird')
+const writeFileAsync = Promise.promisify(fs.writeFile)
+
 const moment = require('moment')
 const path = require('path')
 
@@ -285,7 +288,7 @@ Recent: ${syncResults.recent.length}<br>
         outputFilePath = pluginConfig.outputFile
       }
 
-      await fsPromises.writeFile(outputFilePath, output)
+      await writeFileAsync(outputFilePath, output)
     })
   }
 }
