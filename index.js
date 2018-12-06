@@ -673,6 +673,16 @@ async function fireTagEvents (timeEntryMapping, previousTimeEntryMapping) {
   }
 }
 
+// duration = (duration / 3600).toFixed(2); // toFixed rounds we might want to ceiling if there is a preference to not loose time but that charging more rounding up to a minute is ok?
+// Note: The precision in Active Collab only allows for (2 decimal places) the minimum value we can have is 0.01 so 36 seconds.
+// Duration is in seconds.
+// We need it in decimal hours for Active Collab. Eg 1.5 is 1 hour 30 minutes it appears to have a 36 second minimum precision.
+function durationSecondsToHours(seconds) {
+  return Math.max((Math.round(seconds / 36) * 36) / 3600, 0.01).toFixed(
+    2
+  )
+}
+
 // Note: The TogglAPI may impose a rate limit I saw the following in their documentation.
 // I have not actually encountered a limit however.
 // TogglAPI: For rate limiting we have implemented a Leaky bucket.
@@ -725,12 +735,65 @@ async function SyncTimeEntries () {
     return syncResults
   }
 
+  eventEmitter.emit('receivedTimeEntries', { timeEntries: timeEntries, syncResults: syncResults })
+
   for (let index = 0; index < timeEntries.length; ++index) {
     let timeEntry = timeEntries[index]
+
+    timeEntry.dataType = 'TimeEntry'
+
+    // No description. Get outa here, we need a description to get the Ticket ID.
+    if (!timeEntry.description) {
+      timeEntry.description = ''
+    }
+
+    // Get the Issue # out of the time entry description.
+    var match = timeEntry.description.match(/#(\d+)/)
+    if (match !== null) {
+      timeEntry.issueNumber = match[1] * 1
+    }
+
+    // A work around to allow for billable time for this proof of concept. // TODO: Make this a plugin?
+    if (timeEntry.billable === false && timeEntry.description.startsWith('$')) {
+      timeEntry.billable = true
+    }
+
+    if (timeEntry.wid !== config.Toggl.workspaceId) {
+      await deletePreviousTimeEntryMapping()
+      syncResults.ignored.push({
+        summary: 'Not in workspace.',
+        timeEntry: timeEntry
+      })
+      continue
+    }
+
+    // Map the toggl uid to an active collab user id.
+    var activeCollabUserId =
+      config.togglToActiveCollabUserMapping[timeEntry.uid]
+    if (activeCollabUserId === undefined) {
+      await deletePreviousTimeEntryMapping()
+      syncResults.failed.push({
+        summary: `User ID mapping not found for Time Entry UID: ${
+          timeEntry.uid
+        }.`,
+        timeEntry: timeEntry
+      })
+      continue
+    }
 
     // Store the id's received.
     // We can iterate stored records later for ones not processed but not older than the time entry query duration to identify deletions we may need to make.
     syncResults.togglIdsReceived.push(timeEntry.id)
+
+    // Map to a project if possible.
+    let projectMapping = projectMappings.getRecord(timeEntry.pid)
+    if (projectMapping) {
+      timeEntry.activeCollabProjectId = projectMapping.activeCollabProjectId
+    }
+
+    // Parse the start date from Active Collab as UTC then change timezone to configured for storing in Active Collab.
+    var date = moment.tz(timeEntry.start, 'UTC').tz(config.timezone || 'Pacific/Auckland')
+    timeEntry.date = date.format('YYYY/MM/DD')
 
     let previousTimeEntryMapping = timeMappings.getRecord(timeEntry.id)
 
@@ -768,45 +831,9 @@ async function SyncTimeEntries () {
       console.log(JSON.stringify(timeEntry, true, 2))
     }
 
-    if (timeEntry.wid !== config.Toggl.workspaceId) {
-      await deletePreviousTimeEntryMapping()
-      syncResults.ignored.push({
-        summary: 'Not in workspace.',
-        timeEntry: timeEntry
-      })
-      continue
-    }
-
-    // Parse the start date from Active Collab as UTC then change timezone to configured for storing in Active Collab.
-    var date = moment.tz(timeEntry.start, 'UTC').tz(config.timezone || 'Pacific/Auckland')
-    timeEntry.date = date.format('YYYY/MM/DD')
-
-    // If the time entry is currently running, then skip processing it for now.
-    // If the time entry is currently running, the duration attribute contains a negative value, denoting the start of the time entry in seconds since epoch (Jan 1 1970).
-    // The correct duration can be calculated as current_time + duration, where current_time is the current time in seconds since epoch.
-    if (timeEntry.duration < 0) {
-      await deletePreviousTimeEntryMapping()
-      syncResults.ignored.push({
-        summary: `Time entry is currently running: ${timeEntry.id}.`,
-        timeEntry: timeEntry
-      })
-      continue
-    }
-
-    // No description. Get outa here, we need a description to get the Ticket ID.
-    if (!timeEntry.description) {
-      timeEntry.description = ''
-    }
-
     // if (Array.isArray(timeEntry.tags) && timeEntry.tags.includes('DEBUG')) {
     //   debugger
     // }
-
-    // Get the Issue # out of the time entry description.
-    var match = timeEntry.description.match(/#(\d+)/)
-    if (match !== null) {
-      timeEntry.issueNumber = match[1] * 1
-    }
 
     if (timeEntry.tid) {
       await deletePreviousTimeEntryMapping()
@@ -818,53 +845,17 @@ async function SyncTimeEntries () {
       continue
     }
 
+    eventEmitter.emit('onTimeEntry', { timeEntry: timeEntry, previousMapping: previousTimeEntryMapping, syncResults: syncResults })
+
     var activeCollabSummary = timeEntry.description.trim()
-
-    var billable = timeEntry.billable
-
-    // A work around to allow for billable time for this proof of concept.
-    if (billable === false && activeCollabSummary.startsWith('$')) {
-      billable = true
-    }
 
     // Remove leading $ symbol if present and leading issue number and any white space after it.
     activeCollabSummary = activeCollabSummary.replace(/^\$?#\d+(\s+)?/, '')
     // TODO: Consider if there are any other characters or strings we must strip from the Active Collab summary.
 
-    var duration = timeEntry.duration
-    // Duration is in seconds.
-    // We need it in decimal hours for Active Collab. Eg 1.5 is 1 hour 30 minutes it appears to have a 36 second minimum precision.
-    duration = Math.max((Math.round(duration / 36) * 36) / 3600, 0.01).toFixed(
-      2
-    )
-
-    // duration = (duration / 3600).toFixed(2); // toFixed rounds we might want to ceiling if there is a preference to not loose time but that charging more rounding up to a minute is ok?
-    // Note: The precision in Active Collab only allows for (2 decimal places) the minimum value we can have is 0.01 so 36 seconds.
-    // TODO: Consider if we should round nearest minute (or 36 second interval)?
-    // Such as:
-    // duration = ((Math.round(39 / 36)*36)/3600).toFixed(2);
+    var duration = durationSecondsToHours(timeEntry.duration)
 
     // Note: TODO: If previousTimeEntry at is older start of month we may want to do an additional check on it's status in activeCollab if billable or paid we wouldn't want to over-write it, this case should be an error.
-
-    // Map the toggl uid to an active collab user id.
-    var activeCollabUserId =
-      config.togglToActiveCollabUserMapping[timeEntry.uid]
-    if (activeCollabUserId === undefined) {
-      await deletePreviousTimeEntryMapping()
-      syncResults.failed.push({
-        summary: `User ID mapping not found for Time Entry UID: ${
-          timeEntry.uid
-        }.`,
-        timeEntry: timeEntry
-      })
-      continue
-    }
-
-    // Map to a project if possible.
-    let projectMapping = projectMappings.getRecord(timeEntry.pid)
-    if (projectMapping) {
-      timeEntry.activeCollabProjectId = projectMapping.activeCollabProjectId
-    }
 
     // Apply redirection filters if any.
     await applyRedirectFilter(timeEntry, previousTimeEntryMapping)
@@ -884,16 +875,6 @@ async function SyncTimeEntries () {
         })
       }
 
-      if (timeEntry.skip) {
-        // If we are going to skip the time entry then we should delete the previous time entry mapping if one exists.
-        await deletePreviousTimeEntryMapping()
-
-        syncResults.ignored.push({
-          summary: 'Skipped.',
-          timeEntry: timeEntry
-        })
-        continue
-      }
     } else {
       // If no filter result.
       if (!timeEntry.pid) {
@@ -904,6 +885,17 @@ async function SyncTimeEntries () {
         })
         continue
       }
+    }
+
+    if (timeEntry.skip) {
+      // If we are going to skip the time entry then we should delete the previous time entry mapping if one exists.
+      await deletePreviousTimeEntryMapping()
+
+      syncResults.ignored.push({
+        summary: 'Skipped.',
+        timeEntry: timeEntry
+      })
+      continue
     }
 
     if (!projectMapping) {
@@ -918,6 +910,19 @@ async function SyncTimeEntries () {
     if (argv.verbose > 5) {
       console.log(`Project Mapping found ${projectMapping.activeCollabName}.`)
     }
+
+    // If the time entry is currently running, then skip processing it for now.
+    // If the time entry is currently running, the duration attribute contains a negative value, denoting the start of the time entry in seconds since epoch (Jan 1 1970).
+    // The correct duration can be calculated as current_time + duration, where current_time is the current time in seconds since epoch.
+    if (timeEntry.duration < 0) {
+      await deletePreviousTimeEntryMapping()
+      syncResults.ignored.push({
+        summary: `Time entry is currently running: ${timeEntry.id} ${timeEntry.duration} TODO: Get duration propper ${moment.utc().add({seconds: timeEntry.duration}).format('HH:MM:ss')}.`,
+        timeEntry: timeEntry
+      })
+      continue
+    }
+
 
     if (activeCollabSummary === '') {
       await deletePreviousTimeEntryMapping()
@@ -976,12 +981,13 @@ async function SyncTimeEntries () {
     // Template what we can on our time tracking mapping for storing if we add/update the record.
     var timeEntryMapping = {
       togglId: timeEntry.id,
+      dataType: 'TimeEntryMapping',
 
       date: date.format('YYYY/MM/DD'),
       summary: activeCollabSummary,
       at: timeEntry.at,
-      billable: billable,
-      duration: duration,
+      billable: timeEntry.billable,
+      duration: timeEntry.duration, // Store original seconds.
 
       activeCollabId: null,
       activeCollabUserId: activeCollabUserId, // TODO: Handle multiple user id's.
@@ -1002,6 +1008,10 @@ async function SyncTimeEntries () {
 
     // If the time entry is still for the same project & issue number as previously mapped.
     if (previousTimeEntryMapping) {
+
+      // Use a calculated value in the comparison, in-case we change duration rounding/calculation. // TODO: Make this a function.
+      var previousDuration = durationSecondsToHours(previousTimeEntryMapping.duration)
+
       // If the previous mapping is the same project and issue number as the current timeEntry
       if (
         previousTimeEntryMapping.activeCollabProjectId ===
@@ -1028,9 +1038,9 @@ async function SyncTimeEntries () {
         // Then trigger an update.
         if (
           previousTimeEntryMapping.summary !== activeCollabSummary ||
-          previousTimeEntryMapping.duration !== duration ||
+          previousDuration !== duration ||
           previousTimeEntryMapping.date !== date.format('YYYY/MM/DD') ||
-          previousTimeEntryMapping.billable !== billable ||
+          previousTimeEntryMapping.billable !== timeEntry.billable ||
           tagsChanged === true
         ) {
           // We need to update the time entry.

@@ -233,6 +233,8 @@ Recent: ${syncResults.recent.length}<br>
             output += `<td></td>`
           }
 
+          var durationSeconds = result.timeEntry.activeCollabId !== undefined ? result.timeEntry.duration * 3600 : result.timeEntry.duration * 1000
+
           output += `
 <td>${
   result.timeEntry.issueNumber
@@ -241,7 +243,7 @@ Recent: ${syncResults.recent.length}<br>
 }</td>
         <td>${result.timeEntry.billable ? '$ ' : ''}<xmp>${result.timeEntry
   .summary || result.timeEntry.description || ''}</xmp></td>
-<td>${moment.utc(result.timeEntry.activeCollabId !== undefined ? result.timeEntry.duration * 3600 : result.timeEntry.duration * 1000).format('HH:MM:ss')}</td>
+<td>${moment.utc(durationSeconds).format('HH:MM:ss')}</td>
 <td>
 `
 
