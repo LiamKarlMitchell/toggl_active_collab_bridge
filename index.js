@@ -735,12 +735,14 @@ async function SyncTimeEntries () {
     return syncResults
   }
 
-  eventEmitter.emit('receivedTimeEntries', { timeEntries: timeEntries, syncResults: syncResults })
-
+  // Apply some cleanups and initial values we want to parse out on all time entries.
   for (let index = 0; index < timeEntries.length; ++index) {
     let timeEntry = timeEntries[index]
-
     timeEntry.dataType = 'TimeEntry'
+
+    if (timeEntry.tags === undefined) {
+      timeEntry.tags = []
+    }
 
     // No description. Get outa here, we need a description to get the Ticket ID.
     if (!timeEntry.description) {
@@ -753,10 +755,25 @@ async function SyncTimeEntries () {
       timeEntry.issueNumber = match[1] * 1
     }
 
+    // Insist that billable be true or false.
+    if (timeEntry.billable === undefined) {
+      timeEntry.billable = false
+    }
+
     // A work around to allow for billable time for this proof of concept. // TODO: Make this a plugin?
     if (timeEntry.billable === false && timeEntry.description.startsWith('$')) {
       timeEntry.billable = true
     }
+
+    // Allow for modifying a time entry before it is processed.
+    await eventEmitter.emit('preProcessTimeEntry', { timeEntry: timeEntry, syncResults: syncResults })
+  }
+
+  // Allow for interacting with received time entries prior to processing them.
+  await eventEmitter.emit('receivedTimeEntries', { timeEntries: timeEntries, syncResults: syncResults })
+
+  for (let index = 0; index < timeEntries.length; ++index) {
+    let timeEntry = timeEntries[index]
 
     if (timeEntry.wid !== config.Toggl.workspaceId) {
       await deletePreviousTimeEntryMapping()
@@ -764,6 +781,11 @@ async function SyncTimeEntries () {
         summary: 'Not in workspace.',
         timeEntry: timeEntry
       })
+      continue
+    }
+
+    // If the time entry was collated we don't want to process the collated ones as the first one found will have the sum of duration & tags.
+    if (timeEntry.collated) {
       continue
     }
 
@@ -792,7 +814,7 @@ async function SyncTimeEntries () {
     }
 
     // Parse the start date from Active Collab as UTC then change timezone to configured for storing in Active Collab.
-    var date = moment.tz(timeEntry.start, 'UTC').tz(config.timezone || 'Pacific/Auckland')
+    var date = moment.utc(timeEntry.start).tz(config.timezone || 'Pacific/Auckland')
     timeEntry.date = date.format('YYYY/MM/DD')
 
     let previousTimeEntryMapping = timeMappings.getRecord(timeEntry.id)
@@ -814,7 +836,7 @@ async function SyncTimeEntries () {
           previousTimeEntryMapping.activeCollabId
         )
       } catch (error) {
-        console.error(`Failed to delete previous time entry mapping: ${previousTimeEntryMapping.date} ${previousTimeEntryMapping.issueNumber} ${previousTimeEntryMapping.summary}`, error)
+        console.error(`Failed to delete previous time entry mapping: ${previousTimeEntryMapping.date} ${previousTimeEntryMapping.issueNumber} ${previousTimeEntryMapping.summary}`, error.message, error.stack)
       }
 
       if (deleteMappingRecord) {
@@ -845,7 +867,7 @@ async function SyncTimeEntries () {
       continue
     }
 
-    eventEmitter.emit('onTimeEntry', { timeEntry: timeEntry, previousMapping: previousTimeEntryMapping, syncResults: syncResults })
+    await eventEmitter.emit('onTimeEntry', { timeEntry: timeEntry, previousMapping: previousTimeEntryMapping, syncResults: syncResults })
 
     var activeCollabSummary = timeEntry.description.trim()
 
@@ -853,13 +875,13 @@ async function SyncTimeEntries () {
     activeCollabSummary = activeCollabSummary.replace(/^\$?#\d+(\s+)?/, '')
     // TODO: Consider if there are any other characters or strings we must strip from the Active Collab summary.
 
-    var duration = durationSecondsToHours(timeEntry.duration)
+    timeEntry.activeCollabDuration = duration = durationSecondsToHours(timeEntry.duration)
 
     // Note: TODO: If previousTimeEntry at is older start of month we may want to do an additional check on it's status in activeCollab if billable or paid we wouldn't want to over-write it, this case should be an error.
 
     // Apply redirection filters if any.
     await applyRedirectFilter(timeEntry, previousTimeEntryMapping)
-    eventEmitter.emit('applyRedirectFilter', { mapping: timeEntry, previousMapping: previousTimeEntryMapping })
+    await eventEmitter.emit('applyRedirectFilter', { mapping: timeEntry, previousMapping: previousTimeEntryMapping })
 
     if (timeEntry.redirectFilterApplied) {
       if (argv.verbose > 1) {
@@ -917,7 +939,7 @@ async function SyncTimeEntries () {
     if (timeEntry.duration < 0) {
       await deletePreviousTimeEntryMapping()
       syncResults.ignored.push({
-        summary: `Time entry is currently running: ${timeEntry.id} ${timeEntry.duration} TODO: Get duration propper ${moment.utc().add({seconds: timeEntry.duration}).format('HH:MM:ss')}.`,
+        summary: `Time entry is currently running: ${timeEntry.id} ${timeEntry.duration} TODO: Get duration propper ${moment.utc().add({seconds: timeEntry.duration}).format('HH:mm:ss')}.`,
         timeEntry: timeEntry
       })
       continue
@@ -988,6 +1010,7 @@ async function SyncTimeEntries () {
       at: timeEntry.at,
       billable: timeEntry.billable,
       duration: timeEntry.duration, // Store original seconds.
+      activeCollabDuration: timeEntry.activeCollabDuration, // Store the hours we give to ActiveCollab
 
       activeCollabId: null,
       activeCollabUserId: activeCollabUserId, // TODO: Handle multiple user id's.
@@ -1000,6 +1023,11 @@ async function SyncTimeEntries () {
       // Just in-case include the time entry. This would most likely break our mapping check for if needing to update on disk...
       source: timeEntry,
       activeCollabResult: null
+    }
+
+    // Store history of collated time entry id and durations for summary reasons.
+    if (timeEntry.collatedTimeEntries !== undefined) {
+      timeEntryMapping.collatedTimeEntries = timeEntry.collatedTimeEntries
     }
 
     if (timeEntryMapping.tags.includes('DEBUG')) {
@@ -1068,8 +1096,8 @@ async function SyncTimeEntries () {
                 summary: activeCollabSummary,
                 job_type_id: 1, // TODO: Job Types? No idea how to handle this maybe based off a tag or key word being present in the description.
                 record_date: date.format('YYYY/MM/DD'),
-                value: duration,
-                billable_status: billable ? 1 : 0
+                value: timeEntry.activeCollabDuration,
+                billable_status: timeEntry.billable ? 1 : 0
               }
             )
 
@@ -1091,7 +1119,7 @@ async function SyncTimeEntries () {
             // Store the time mapping.
             await timeMappings.store(timeEntry.id, timeEntryMapping)
           } catch (error) {
-            console.error(error)
+            console.error(error.message, error.stack.replace(/\\n/g,"\n"))
             await deletePreviousTimeEntryMapping(false)
             syncResults.failed.push({
               summary: `Error from Active Collab when updating a time tracking record. ${error}`,
@@ -1127,7 +1155,7 @@ async function SyncTimeEntries () {
           // Note: Intentionally not removing from mapping as we will over-write it next with a create new time entry action.
           deletePreviousTimeEntryMapping(false)
         } catch (error) {
-          console.error(error)
+          console.error(error.message, error.stack.replace(/\\n/g,"\n"))
           syncResults.failed.push({
             summary: `Error from Active Collab when deleting a time tracking record. ${error}`,
             timeEntry: timeEntry
@@ -1166,8 +1194,8 @@ async function SyncTimeEntries () {
           summary: activeCollabSummary,
           job_type_id: 1, // TODO: Job Types? No idea how to handle this maybe based off a tag or key word being present in the description.
           record_date: date.format('YYYY/MM/DD'),
-          value: duration,
-          billable_status: billable ? 1 : 0
+          value: timeEntry.activeCollabDuration,
+          billable_status: timeEntry.billable ? 1 : 0
         }
       )
 
@@ -1188,7 +1216,7 @@ async function SyncTimeEntries () {
       await timeMappings.store(timeEntry.id, timeEntryMapping)
     } catch (error) {
       if (argv.verbose) {
-        console.error(error)
+        console.error(error.message, error.stack.replace(/\\n/g,"\n"))
       }
       syncResults.failed.push({
         summary: `Error from Active Collab when adding a time tracking record. ${error}`,
@@ -1244,7 +1272,7 @@ async function SyncTimeEntries () {
       )
     } catch (error) {
       if (argv.verbose) {
-        console.error(error)
+        console.error(error.message, error.stack.replace(/\\n/g,"\n"))
       }
       syncResults.failed.push({
         summary: `Error from Active Collab when deleting a time tracking record. ${error}`,
@@ -1255,7 +1283,7 @@ async function SyncTimeEntries () {
     try {
       await timeMappings.delete(oldTimeEntry.togglId)
     } catch (error) {
-      console.error(error)
+      console.error(error.message, error.stack.replace(/\\n/g,"\n"))
       syncResults.failed.push({
         summary: `Error from TogglMapping when deleting a time tracking record. ${error}`,
         timeEntry: oldTimeEntry

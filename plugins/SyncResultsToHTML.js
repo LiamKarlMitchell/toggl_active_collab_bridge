@@ -233,17 +233,16 @@ Recent: ${syncResults.recent.length}<br>
             output += `<td></td>`
           }
 
-          var durationSeconds = result.timeEntry.activeCollabId !== undefined ? result.timeEntry.duration * 3600 : result.timeEntry.duration * 1000
+          var durationSeconds = result.timeEntry.duration //rresult.timeEntry.activeCollabId !== undefined ? result.timeEntry.duration : result.timeEntry.duration * 3600
 
           output += `
 <td>${
   result.timeEntry.issueNumber
     ? '#' + result.timeEntry.issueNumber
     : ''
-}</td>
-        <td>${result.timeEntry.billable ? '$ ' : ''}<xmp>${result.timeEntry
-  .summary || result.timeEntry.description || ''}</xmp></td>
-<td>${moment.utc(durationSeconds).format('HH:MM:ss')}</td>
+}</td>`
+output += `<td>${result.timeEntry.billable ? '<small>$ Billable</small><br>' : ''}${result.timeEntry.collatedTimeEntries !== undefined ? '<small>Collated ('+result.timeEntry.collatedTimeEntries.length+')</small><br>' : ''}<xmp>${result.timeEntry.summary || result.timeEntry.description || ''}</xmp></td>`
+output += `<td>${moment.utc(durationSeconds*1000).format('HH:mm:ss')}</td>
 <td>
 `
 
