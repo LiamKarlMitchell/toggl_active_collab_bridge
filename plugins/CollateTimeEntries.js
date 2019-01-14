@@ -8,12 +8,26 @@ const events = require('../MyEventEmitter')
   Stop datetime will only be retained for first record found.
 */
 
-function getKeyFromTimeEntry(timeEntry) {
-    return `${timeEntry.billable ? 'billable' : 'notbillable'}_${timeEntry.wid}_${timeEntry.uid}_${timeEntry.pid ? timeEntry.pid : 'nopid'}_${timeEntry.description}`.toLowerCase().replace(/[^#a-z_\-0-9]/g,'')
-}
-
 module.exports = {
   init: function (pluginConfig) {
+    function getKeyFromTimeEntry(timeEntry) {
+
+        // Some specific tags may not want to be collated together with the other entries without those tags.
+        // For example "Overtime" or "DEBUG".
+        var tagKeysFound = []
+        if (timeEntry.tags.length > 0 && pluginConfig.keyTags !== undefined && Array.isArray(pluginConfig.keyTags)) {
+            for (var i=0; i<pluginConfig.keyTags.length; i++) {
+                var tag = pluginConfig.keyTags[i]
+                if (timeEntry.tags.includes(tag)) {
+                    tagKeysFound.push(tag)
+                }
+            }
+        }
+
+        var key = `${timeEntry.billable ? 'billable' : 'notbillable'}_${tagKeysFound.join('_')}_${timeEntry.wid}_${timeEntry.uid}_${timeEntry.pid ? timeEntry.pid : 'nopid'}_${timeEntry.description}`.toLowerCase().replace(/[^#a-z_\-0-9]/g,'')
+        return key
+    }
+
     events.on('receivedTimeEntries', async function (event) {
         let collation = {}
         let dateCollations = null

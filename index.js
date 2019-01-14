@@ -890,7 +890,7 @@ async function SyncTimeEntries () {
 
       if (projectMapping === null ||
         projectMapping === undefined ||
-        projectMapping.id !== timeEntry.activeCollabProjectid) {
+        projectMapping.activeCollabProjectId !== timeEntry.activeCollabProjectId) {
         // Get pid based off the filters applied activeCollabProjectId.
         projectMapping = projectMappings.find((_projectMapping) => {
           return _projectMapping.activeCollabProjectId === timeEntry.activeCollabProjectId
