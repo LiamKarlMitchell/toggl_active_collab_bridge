@@ -197,13 +197,16 @@ async function SyncCompanies () {
  */
 async function SyncProjects () {
   var activeCollabProjects = await activeCollab.projects()
+  // TODO: Resolve an issue where projects for archived clients are attempted to map.
   for (let index = 0; index < activeCollabProjects.length; ++index) {
     // TODO: A way to skip specific records?
     // TODO: Exclude projects for specific companies.
     let projectInfo = activeCollabProjects[index]
 
     let projectMapping = await TogglTryCreateProject(projectInfo)
-    await projectMappings.store(projectMapping.togglId, projectMapping)
+    if (projectMapping) {
+      await projectMappings.store(projectMapping.togglId, projectMapping)
+    }
   }
 }
 
@@ -419,11 +422,13 @@ async function TogglCreateProject (projectInfo) {
   })
 
   if (!togglClientMapping) {
-    throw new Error(
-      `Toggl Client mapping not found for Active Collab Project ${
-        projectInfo.name
-      } ${projectInfo.company_id}.`
-    )
+    console.error(
+        `Toggl Client mapping not found for Active Collab Project ${
+          projectInfo.name
+        } ${projectInfo.company_id}.`
+      )
+
+      return null
   }
 
   try {
@@ -613,7 +618,7 @@ async function applyRedirectFilter (timeEntry, previousTimeEntry) {
       // Fail if error on billable is set to true and timeEntry is marked as billable.
       if (filter.errorOnBillable === true && timeEntry.billable === true) {
         // Fail as billable would have been met by this filter.
-        throw new Error('Filter error on billable.')
+        throw new Error('Filter error on billable. ' + timeEntry.date + ' ' + timeEntry.description)
       }
 
       // Over-ride values with the target values.
@@ -691,7 +696,7 @@ function durationSecondsToHours(seconds) {
 // Limiting is applied per api token per IP, meaning two users from the same IP will get their rate allocated separately.
 
 async function SyncTimeEntries () {
-  console.time('SyncTimeEntries')
+  //console.time('SyncTimeEntries')
 
   var syncResults = {
     // Time entries we have ignored from syncing, although we still track their received id to omit those records from deletion if they were previously processed.
@@ -728,7 +733,7 @@ async function SyncTimeEntries () {
       startMoment.toISOString()
     )
   } catch (error) {
-    console.timeEnd('SyncTimeEntries')
+    //console.timeEnd('SyncTimeEntries')
     syncResults.error = error
     console.error('Failed to get time entries.', error)
     await eventEmitter.emit('timeEntrySyncResults', syncResults)
@@ -1293,7 +1298,7 @@ async function SyncTimeEntries () {
     await eventEmitter.emit('timeDeleted', { mapping: oldTimeEntry })
   })
 
-  console.timeEnd('SyncTimeEntries')
+  //console.timeEnd('SyncTimeEntries')
 
   await eventEmitter.emit('timeEntrySyncResults', syncResults)
   
