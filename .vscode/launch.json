@@ -9,7 +9,8 @@
       "request": "launch",
       "name": "Launch",
       "program": "${workspaceFolder}\\index.js",
-      "cwd": "${workspaceFolder}"
+      "cwd": "${workspaceFolder}",
+      "runtimeArgs": ["--tls-min-v1.0"]
     },
     {
       "type": "node",

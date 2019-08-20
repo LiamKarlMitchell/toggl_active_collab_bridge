@@ -534,6 +534,11 @@ async function getActiveCollabProjectTasks (activeCollabProjectId) {
   if (projectTasks === undefined) {
     let activeCollabTasks = await activeCollab.tasks(activeCollabProjectId)
 
+    if (activeCollabTasks === null) {
+      console.log(`No tasks found for Project ID: ${activeCollabProjectId}`);
+      return [];
+    }
+
     // Reduce the array of objects down to key on task id.
     projectTasks = activeCollabTasks.reduce(function (obj, item) {
       obj[item.task_id] = item
