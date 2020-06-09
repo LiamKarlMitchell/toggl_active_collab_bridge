@@ -21,5 +21,6 @@
     "CompaniesAndProjects": "0 * * * *",
     "TimeEntries": "*/5 * * * *"
   },
-  "projectTasksCacheTTLSeconds": 300
+  "projectTasksCacheTTLSeconds": 300,
+  "plugins": {}
 }

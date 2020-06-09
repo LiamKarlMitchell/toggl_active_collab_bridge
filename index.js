@@ -57,7 +57,9 @@ async function Main () {
 const plugins = []
 async function LoadPlugins () {
   if (config.plugins) {
-    Object.entries(config.plugins).forEach(
+    Object.entries(config.plugins).sort((a, b) => {
+      return (a[1].pluginOrder || 0) - (b[1].pluginOrder || 0)
+    }).forEach(
       ([pluginName, pluginConfig]) => {
         var scriptName = pluginName
         pluginConfig.name = pluginName
@@ -147,7 +149,7 @@ async function ConfigCheck () {
     // people/PeopleId/users
 
     throw new Error(
-      "Expecting config.togglToActiveCollabUserMapping to map the Toggl User ID's to Active Collab User ID's.\nExample: { \"4118110\": 315 }"
+      "Expecting config.togglToActiveCollabUserMapping to map the Toggl User ID's to Active Collab User ID's.\nExample: { \"2108110\": 925 }"
     )
   }
 
@@ -786,7 +788,8 @@ async function SyncTimeEntries () {
     let timeEntry = timeEntries[index]
 
     if (timeEntry.wid !== config.Toggl.workspaceId) {
-      await deletePreviousTimeEntryMapping()
+      // TODO: Fix error Cannot access 'deletePreviousTimeEntryMapping' before initialization
+      //await deletePreviousTimeEntryMapping()
       syncResults.ignored.push({
         summary: 'Not in workspace.',
         timeEntry: timeEntry
@@ -803,7 +806,8 @@ async function SyncTimeEntries () {
     var activeCollabUserId =
       config.togglToActiveCollabUserMapping[timeEntry.uid]
     if (activeCollabUserId === undefined) {
-      await deletePreviousTimeEntryMapping()
+      // TODO: Fix error Cannot access 'deletePreviousTimeEntryMapping' before initialization
+      // await deletePreviousTimeEntryMapping()
       syncResults.failed.push({
         summary: `User ID mapping not found for Time Entry UID: ${
           timeEntry.uid
@@ -828,6 +832,10 @@ async function SyncTimeEntries () {
     timeEntry.date = date.format('YYYY/MM/DD')
 
     let previousTimeEntryMapping = timeMappings.getRecord(timeEntry.id)
+
+    if (previousTimeEntryMapping !== null) {
+      await eventEmitter.emit('beforeDeletePreviousTimeEntry', { timeEntry: timeEntry, previousTimeEntryMapping: previousTimeEntryMapping, syncResults: syncResults })
+    }
 
     let deletePreviousTimeEntryMapping = async (deleteMappingRecord = true) => {
       if (previousTimeEntryMapping === null || previousTimeEntryMapping === undefined) {

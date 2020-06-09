@@ -107,6 +107,63 @@ More Verbose Mode
 node index --verbose=5
 ```
 
+## Plugins
+
+Plugins can be loaded in.
+
+Optional argument of pluginOrder lets you sort the order in which plugins are loaded.
+
+Example Config:
+```json
+{
+  "plugins": {
+    "CollateTimeEntries": { "pluginOrder": 1, "enabled": true, "keyTags": [ "Overtime" ] },
+    "CompleteTicketViaTag": { "pluginOrder": 2, "enabled": true },
+    "StoreSummaryAsCommentOnTicketViaTag": { "pluginOrder": 3, "enabled": true },
+    "SyncResultsToHTML": { "pluginOrder": 4, "enabled": true },
+    "Minimum" : { "pluginOrder": 10, "minutes": 15 }
+  }
+}
+```
+
+### Collate Time Entries
+
+Collates time entries into a single record if they are the same project, issue number, comment, billable status, day.
+
+### Complete Ticket Via Tag
+
+Completes a ticket in Active Collab based on the Tag given.
+
+### Minimum
+
+Lets you have a minimum time for each entry.
+15 minutes default.
+
+Arguments:
+duration: seconds
+
+### Round
+
+Lets you round a time entry duration to a chuck of seconds.
+
+Arguments:
+duration: seconds
+
+### Ceiling
+
+Lets you round up a time entry duration to a chuck of seconds.
+
+Arguments:
+duration: seconds
+
+
+### Store Summary As Comment On Ticket Via Tag
+
+Store the summary from the time entry onto the Active Collab ticket if the tag is set.
+
+### Sync Results To HTML
+Recommended, gives an HTML report after syncing that can be used to see potential issues.
+
 ## License etc...
 License: MIT
 

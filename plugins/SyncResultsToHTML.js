@@ -241,7 +241,7 @@ Recent: ${syncResults.recent.length}<br>
     ? '#' + result.timeEntry.issueNumber
     : ''
 }</td>`
-output += `<td>${result.timeEntry.billable ? '<small>$ Billable</small><br>' : ''}${result.timeEntry.tags !== undefined && result.timeEntry.tags.length > 0 ? "<small><span>"+result.timeEntry.tags.join('</span><span>')+"</span></small><br>" : ''}${result.timeEntry.collatedTimeEntries !== undefined ? '<small>Collated ('+result.timeEntry.collatedTimeEntries.length+')</small>' : ''}<xmp>${result.timeEntry.summary || result.timeEntry.description || ''}</xmp></td>`
+output += `<td>${result.timeEntry.billable ? '<small>$ Billable</small><br>' : ''}${result.timeEntry.tags !== undefined && result.timeEntry.tags.length > 0 ? "<small><span>"+result.timeEntry.tags.join('</span><span>')+"</span></small><br>" : ''}${result.timeEntry.collatedTimeEntries !== undefined ? '<small>Collated ('+result.timeEntry.collatedTimeEntries.length+')</small>' : ''}<xmp>${result.timeEntry.summary || result.timeEntry.description || ''}</xmp>${result.timeEntry.timeModified ? '<br><small>Time was modified ' + result.timeEntry.timeModified + '</small>': '' }</td>`
 output += `<td>${moment.utc(durationSeconds*1000).format('HH:mm:ss')}</td>
 <td>
 `
