@@ -2,10 +2,37 @@
 # Facilitate syncing time entries from Toggl against tickets in Active Collab.
 This project aims to sync Projects and Clients from Active Collab into Toggl workspace and automate filling time entries from Toggl into the appropriate Active Collab ticket.
 
+# Features
+
+1. Sync Companies as Clients in Toggl
+2. Sync Projects to Toggl
+3. Take time entries for a project, user, billable status and prefixed with an issue id and put them in Active Collab.
+   Creating or Deleting/Updating.
+
+Does not create tasks in Toggl or use them for data.
+
+Note: Multi User support is not yet tested, behaviour undefined.
+Note: I'm not sure what would happen if this is used by multiple users on the same Toggl Workspace!
+      Plan to test this soon as we are wanting to use Toggl at work for multiple users on the same Workspace for reporting purposes as Active Collab 7 does not have great reporting features like version 4 did.
+      I know that it handles case of client or project already existing and looks up the relevant info for the mapping records from Toggl and that it looks up the mapped user id, config could have multiple so it should work but I've never tried!
+
+Note: This tool stores a mapping of id and data of records between the two systems.
+If you want to run it from multiple devices for the same user, please make sure to keep the data directory up to date or you will get duplicate entries!
+
+Note: Projects are currently created as public so all team members could see it.
+It is not always the case that all team members would be seeing same project in Active Collab.
+If this is important for you then need to adapt the code to update Toggl members on projects based on the Toggl user id mappings.
+However would need to be constantly updated when the members on the project changes which would be irksome so I have not implemented this.
+
 ## Requirements
 Node.js: node.js 8.10.0 + *Or close enough...* I'm actually running 10.6 on Windows 10, although this should run on other OS as well.
 
-Active Collab: Self Hosted v4.2.17
+Active Collab: Self Hosted v7.0.15
+Should also work with cloud by the way.
+
+For older versions e.g. 5,6 it might work API should be the same?
+
+For even older version such as v4.2.17 use the code at the tag active_collab_4 b98b74143dbeea77d34a10618859ccd9265a9e05
 
 Other versions may work although the new Active Collab overhauled their API and it has some significant changes, the wrapper module would need to be improved/modified to talk with it.
 
@@ -22,6 +49,8 @@ Create a workspace in Toggl if it does not exist already, you may be able to use
 
 The Workspace ID can be seen in the url when you click the settings of the Workspace on the toggl.com/app/workspaces page the program can alternatively find it by the configured Name if needed.
 
+
+TODO: Rewrite getting started instructions for new Active Collab 7!
 Set up your Active Collab API key subscription and put it in the Config.
 
 Install node modules.
@@ -30,13 +59,15 @@ npm install
 ```
 
 ## Configuration
-To be discussed, I'll write this soon.  
+TODO: Need to write better documentation on configuration.  
 
 In short,
 
 - Copy the config.dist.json and name it config.json
 - Fill in API keys, Active Collab URL and Workspace id/Name.
 - Specify the user mapping of TogglId to ActiveCollabId.
+- Note: apiUrl is the Base URL to your Active Collab installation, don't include the /api/v1 part!
+
 
 ## Toggl API Token
 
@@ -84,8 +115,12 @@ Example of user mapping.
 ## Workflow
 When entering time entries into Toggl you should.
 1. Choose the appropriate Project and be working in the configured Workspace.
-2. Start the the description with #taskNumber where taskNumber is the value you see in Active Collab.
+2. Start the description with #taskNumber where taskNumber is the value you see in Active Collab. (Note: This is not the ID in the URL in Active Collab 7 but the one on the task as it opens up.)
+   You can also put a $ in front of the # in the task description to indicate if the time is billable.
 3. After syncing, review failed/ignored reasons and cross-check your times using the Active Collab and Toggl reporting features.
+
+Note: The task_number from Active Collab is entered in the descriptions of time entries in Toggl.
+However Time Entries are created to have a parent_id and TaskID set to the Active Collab Task ID, this is different to the Active Collab task_number that you see in the URL.
   
 ## Program Usage
 Start the program as needed to sync, you can leave it running longer there is a cron like schedule for running the sync operations..
@@ -201,12 +236,11 @@ So far I have had to ask my-self these questions feel free to make an Issue aski
 
 Q. What Active Collab does this support?
 
-A. None, but it seems to work with Self Hosted v4.2.17.
+A. None, but it seems to work with Self Hosted v7 an older tag works with Active Collab Self Hosted v4.2.17.
 
-Q. Why such an old version of Active Collab?
+Q. Why should we use Toggl Active Collab 7 already includes a timer.
 
-A. It's keeps the lights on, if it ain't fix don't break it right?
-    (I'm simply poking it with a stick, yes I tried activeCollab Timer 3 but it *ain't got nuffin* on Toggl).
+A. You are right, but I find Toggl is more user friendly than the built in timer and has better reporting features.
 
 Q. I changed the time entry details or deleted it, have I broken this?
 
@@ -293,6 +327,10 @@ A. You may consider these terms interchangeable whilst reading this project.
 | Client | Company |
 | API Key | API Token |
 
+
+Q. Does this support multiple job types?
+A. No, at the moment it puts everything as General id 1.
+   However this behaviour could be improved on, perhaps by mapping specific tags to Job Types?
 
 Q. Was this fun to make?
 A. Yes quite, I went through several thoughts of it's design and decided I didn't need a database.

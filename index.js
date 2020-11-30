@@ -15,8 +15,6 @@ var TimeEntriesRetrieveDuration = moment.duration(
   config.TimeEntriesRetrieveDuration || { weeks: 2 }
 )
 
-const TogglMapping = require('./TogglMapping')
-
 const { timeMappings, clientMappings, projectMappings } = require('./MyMappings')
 
 const NodeCache = require('node-cache')
@@ -45,6 +43,21 @@ const singleInstanceSyncTimeEntries = new AsyncSingleInstance(SyncTimeEntries)
 // The sequental calling and order of these operations is intended.
 async function Main () {
   await ConfigCheck()
+
+  var activeCollabToken = activeCollab.getToken()
+  if (activeCollabToken === '') {
+    try {
+      await activeCollab.issueToken()
+      var token = activeCollab.getToken()
+      if (token === undefined || token === '') {
+        console.error('Active Collab Token is not set!')
+      }
+      console.log(`Active Collab Token is: ${token} you may set this in your config file as key apiToken on the ActiveCollab object to persist it.`)
+    } catch (e) {
+      console.error('Unable to issue a token from Active Collab.')
+      throw e
+    }
+  }
   await LoadPlugins()
   await LoadMappings()
   await eventEmitter.emit('startup')
@@ -153,6 +166,16 @@ async function ConfigCheck () {
     )
   }
 
+  if ( !config.ActiveCollab ) {
+    throw new Error("Expecting config.ActiveCollab to be set.")
+  }
+
+  if ( !config.ActiveCollab.apiToken ) {
+    console.info("Active Collab API token is not set.")
+  }
+
+  // TODO: Check other settings such as Self Hosted, Account ID, URL etc etc, although these are checked in the MyActiveCollabClient.js as well so may not need to check them here?
+
   if (config.redirectFilters !== undefined) {
     if (Array.isArray(config.redirectFilters) === false) {
       throw new Error('Expecting config.redirectFilters if set to be an array.')
@@ -183,14 +206,32 @@ async function LoadMappings () {
  * Copy the companies from Active Collab as Toggl Clients.
  */
 async function SyncCompanies () {
-  var activeCollabCompanies = await activeCollab.companies()
-  for (let index = 0; index < activeCollabCompanies.length; ++index) {
+  try {
+    var response = await activeCollab.get('companies')
+    if (response.statusText !== 'OK') {
+      throw new Error('Getting companies did not return OK.')
+    }
+    var activeCollabCompanies = response.data
+  } catch (e) {
+    console.error('Unable to get companies from Active Collab')
+    throw e
+  }
+  for (const company of activeCollabCompanies) {
     // TODO: A way to skip specific records?
     // TODO: Exclude specific companies.
-    let companyInfo = activeCollabCompanies[index]
+    // Both of these can be done with a plugin if emitted here.
+    // TODO: Ignore trashed and archived?
+    // if (company.is_trashed) {
+    //   continue;
+    // }
 
-    let clientMapping = await TogglTryCreateClient(companyInfo)
-    await clientMappings.store(clientMapping.togglId, clientMapping)
+    try {
+      let clientMapping = await TogglTryCreateClient(company)
+      await clientMappings.store(clientMapping.togglId, clientMapping)
+    } catch (e) {
+      console.error('Unable to save company as a client in Toggl.')
+      throw e;
+    }
   }
 }
 
@@ -198,14 +239,27 @@ async function SyncCompanies () {
  * Copy the projects from Active Collab as Toggl Projects.
  */
 async function SyncProjects () {
-  var activeCollabProjects = await activeCollab.projects()
+  try {
+    var response = await activeCollab.get('projects')
+    if (response.statusText !== 'OK') {
+      throw new Error('Getting projects did not return OK.')
+    }
+    var activeCollabProjects = response.data
+  } catch (e) {
+    console.error('Unable to get projects from Active Collab')
+    throw e
+  }
+
   // TODO: Resolve an issue where projects for archived clients are attempted to map.
-  for (let index = 0; index < activeCollabProjects.length; ++index) {
+  for (const project of activeCollabProjects) {
     // TODO: A way to skip specific records?
     // TODO: Exclude projects for specific companies.
-    let projectInfo = activeCollabProjects[index]
+    // TOOD: Ignore trashed and archived?
+    // if (project.is_trashed || project.is_archived) {
+    //   continue
+    // }
 
-    let projectMapping = await TogglTryCreateProject(projectInfo)
+    let projectMapping = await TogglTryCreateProject(project)
     if (projectMapping) {
       await projectMappings.store(projectMapping.togglId, projectMapping)
     }
@@ -281,7 +335,7 @@ async function TogglTryCreateClient (clientInfo) {
     previousMapping.activeCollabName === clientInfo.name &&
     previousMapping.activeCollabId === clientInfo.id
   ) {
-    // Note: We are assumign Toggl client has not changed.
+    // Note: We are assuming Toggl client has not changed.
     return previousMapping
   }
 
@@ -303,7 +357,7 @@ async function TogglCreateClient (clientInfo) {
   // Relevant documentation:
   // http://7eggs.github.io/node-toggl-api/TogglClient.html#createClient
   // https://github.com/toggl/toggl_api_docs/blob/master/chapters/clients.md
-  // https://activecollab.com/help-classic/books/api/people
+  // https://developers.activecollab.com/api-documentation/v1/people/companies/companies.html
   try {
     var result = await toggl.createClientAsync({
       name: clientInfo.name, // Name required and should be unique per workspace.
@@ -319,8 +373,8 @@ async function TogglCreateClient (clientInfo) {
     }
 
     var activeCollabTimestamp = clientInfo.updated_on
-      ? clientInfo.updated_on.timestamp
-      : clientInfo.created_on.timestamp
+      ? clientInfo.updated_on
+      : clientInfo.created_on
 
     var mapping = {
       sync: true,
@@ -360,8 +414,8 @@ async function TogglCreateClient (clientInfo) {
           togglClient.wid === config.Toggl.workspaceId
         ) {
           activeCollabTimestamp = clientInfo.updated_on
-            ? clientInfo.updated_on.timestamp
-            : clientInfo.created_on.timestamp
+            ? clientInfo.updated_on
+            : clientInfo.created_on
           return {
             sync: true,
             activeCollabName: clientInfo.name,
@@ -398,14 +452,14 @@ async function TogglTryCreateProject (projectInfo) {
   })
 
   // Check if record would be same as what we already mapped.
-  // If so we can return doing nothing.
+  // If so we can return doing nothing. Note: Does not check billable status!
   if (
     previousMapping &&
     previousMapping.activeCollabName === projectInfo.name &&
     previousMapping.activeCollabClientId === projectInfo.clientId &&
     previousMapping.activeCollabProjectId === projectInfo.id
   ) {
-    // Note: We are assumign Toggl project has not changed.
+    // Note: We are assuming the Toggl project has not changed.
     return previousMapping
   }
 
@@ -440,7 +494,7 @@ async function TogglCreateProject (projectInfo) {
       cid: togglClientMapping.togglId,
       active: true,
       is_private: false,
-      // billable: true, // One day maybe...
+      billable: projectInfo.is_billable, // Note: Might not work in free version of Toggl?
       color: Math.floor(Math.random() * 15) // 15 colors. Taste the rainbow.
       // rate: 9001, // We don't use Rate.
     })
@@ -453,8 +507,8 @@ async function TogglCreateProject (projectInfo) {
     }
 
     var activeCollabTimestamp = projectInfo.updated_on
-      ? projectInfo.updated_on.timestamp
-      : projectInfo.created_on.timestamp
+      ? projectInfo.updated_on
+      : projectInfo.created_on
 
     var mapping = {
       sync: true,
@@ -494,8 +548,8 @@ async function TogglCreateProject (projectInfo) {
           togglProject.wid === config.Toggl.workspaceId
         ) {
           activeCollabTimestamp = projectInfo.updated_on
-            ? projectInfo.updated_on.timestamp
-            : projectInfo.created_on.timestamp
+            ? projectInfo.updated_on
+            : projectInfo.created_on
           return {
             sync: true,
             activeCollabName: projectInfo.name,
@@ -534,16 +588,25 @@ async function getActiveCollabProjectTasks (activeCollabProjectId) {
 
   // If the Project Tasks were not found in the cache then get them from Active Collab and store them in the cache.
   if (projectTasks === undefined) {
-    let activeCollabTasks = await activeCollab.tasks(activeCollabProjectId)
+    try {
+      var result = await activeCollab.get(`projects/${activeCollabProjectId}/tasks`)
+      if (result.statusText !== 'OK') {
+        throw new Error(`Getting Active Collabs tasks for project ${activeCollabProjectId} returned a non OK status.`)
+      }
+      var activeCollabTasks = result.data.tasks || null
+    } catch (e) {
+      console.error('Unable to get Active Collab tasks.')
+      throw e
+    }
 
     if (activeCollabTasks === null) {
       console.log(`No tasks found for Project ID: ${activeCollabProjectId}`);
       return [];
     }
 
-    // Reduce the array of objects down to key on task id.
+    // Reduce the array of objects down to key on task number.
     projectTasks = activeCollabTasks.reduce(function (obj, item) {
-      obj[item.task_id] = item
+      obj[item.task_number] = item
       return obj
     }, {})
 
@@ -791,7 +854,7 @@ async function SyncTimeEntries () {
       // TODO: Fix error Cannot access 'deletePreviousTimeEntryMapping' before initialization
       //await deletePreviousTimeEntryMapping()
       syncResults.ignored.push({
-        summary: 'Not in workspace.',
+        summary: 'Not in configured workspace.',
         timeEntry: timeEntry
       })
       continue
@@ -809,7 +872,7 @@ async function SyncTimeEntries () {
       // TODO: Fix error Cannot access 'deletePreviousTimeEntryMapping' before initialization
       // await deletePreviousTimeEntryMapping()
       syncResults.failed.push({
-        summary: `User ID mapping not found for Time Entry UID: ${
+        summary: `Toggl to Active Collab User ID mapping not found for Time Entry UID: ${
           timeEntry.uid
         }.`,
         timeEntry: timeEntry
@@ -847,6 +910,7 @@ async function SyncTimeEntries () {
           console.log(`Deleting previous time entry: ${previousTimeEntryMapping.date} ${previousTimeEntryMapping.issueNumber} ${previousTimeEntryMapping.summary}`)
         }
 
+        throw new Error('Not yet Implemented activeCollab.timeDelete')
         // Remove the previous time entry from Active Collab.
         await activeCollab.timeDelete(
           previousTimeEntryMapping.activeCollabProjectId,
@@ -963,6 +1027,16 @@ async function SyncTimeEntries () {
       continue
     }
 
+    if (timeEntry.duronly) {
+      console.warn('Duration only time entries are not yet implemented.')
+      await deletePreviousTimeEntryMapping()
+      syncResults.ignored.push({
+        summary: `Time entry is currently running: ${timeEntry.id} ${timeEntry.duration} TODO: Get duration propper ${moment.utc().add({seconds: timeEntry.duration}).format('HH:mm:ss')}.`,
+        timeEntry: timeEntry
+      })
+      continue
+    }
+
 
     if (activeCollabSummary === '') {
       await deletePreviousTimeEntryMapping()
@@ -1018,6 +1092,14 @@ async function SyncTimeEntries () {
       )
     }
 
+    if (timeEntry.billable === true && task.is_billable === false) {
+      console.warn(
+          `Task ${timeEntry.issueNumber} adding billable to a non billable ticket, behaviour unknown Active Collab project ${projectMapping.activeCollabName} ${
+              task.id
+          } ${task.name}`
+      )
+    }
+
     // Template what we can on our time tracking mapping for storing if we add/update the record.
     var timeEntryMapping = {
       togglId: timeEntry.id,
@@ -1028,11 +1110,13 @@ async function SyncTimeEntries () {
       at: timeEntry.at,
       billable: timeEntry.billable,
       duration: timeEntry.duration, // Store original seconds.
-      activeCollabDuration: timeEntry.activeCollabDuration, // Store the hours we give to ActiveCollab
+      activeCollabDuration: timeEntry.activeCollabDuration, // Store the hours duration we give to ActiveCollab
 
       activeCollabId: null,
       activeCollabUserId: activeCollabUserId, // TODO: Handle multiple user id's.
       activeCollabProjectId: projectMapping.activeCollabProjectId,
+
+      taskId: task.id,
       issueNumber: timeEntry.issueNumber,
 
       // Store the tags ensure they are sorted, empty array if not set.
@@ -1105,19 +1189,28 @@ async function SyncTimeEntries () {
               )
             }
 
-            var trackingResult = await activeCollab.timeEdit(
-              projectMapping.activeCollabProjectId,
-              timeEntry.issueNumber,
-              previousTimeEntryMapping.activeCollabId,
-              {
-                user_id: activeCollabUserId, // TODO: Handle multiple user id's.
-                summary: activeCollabSummary,
-                job_type_id: 1, // TODO: Job Types? No idea how to handle this maybe based off a tag or key word being present in the description.
-                record_date: date.format('YYYY/MM/DD'),
-                value: timeEntry.activeCollabDuration,
-                billable_status: timeEntry.billable ? 1 : 0
-              }
-            )
+            try {
+              var response = await activeCollab.post(`projects/${projectMapping.activeCollabProjectId}/time-records/${previousTimeEntryMapping.activeCollabId}`,
+                  {
+                    user_id: activeCollabUserId, // TODO: Handle multiple user id's.
+                    summary: activeCollabSummary,
+                    job_type_id: 1, // TODO: Job Types? No idea how to handle this maybe based off a tag or key word being present in the description.
+                    record_date: date.format('YYYY/MM/DD'),
+                    value: timeEntry.activeCollabDuration,
+                    billable_status: timeEntry.billable ? 1 : 0,
+                    parent_id: task.id,
+                    parent_type: "Task",
+                    task_id: task.id
+                  }
+              )
+              var trackingResult = response.data.single
+            } catch (e) {
+              syncResults.failed.push({
+                summary: `Error from Active Collab when editing a time tracking record. ${e}`,
+                timeEntry: timeEntry
+              })
+              continue
+            }
 
             // Update the id just in-case. Although in reality it should not have changed.
             timeEntryMapping.activeCollabId = trackingResult.id
@@ -1145,7 +1238,6 @@ async function SyncTimeEntries () {
             })
             continue
           }
-
           continue
         } else {
           // No Change in the time entry we would record in Active collab.
@@ -1204,18 +1296,29 @@ async function SyncTimeEntries () {
     //       Could compare exact date and summary and check if other entry not mapped, but that is flawed if there are multiple.
 
     try {
-      trackingResult = await activeCollab.timeAdd(
-        projectMapping.activeCollabProjectId,
-        timeEntry.issueNumber,
-        {
-          user_id: activeCollabUserId, // TODO: Handle multiple user id's.
-          summary: activeCollabSummary,
-          job_type_id: 1, // TODO: Job Types? No idea how to handle this maybe based off a tag or key word being present in the description.
-          record_date: date.format('YYYY/MM/DD'),
-          value: timeEntry.activeCollabDuration,
-          billable_status: timeEntry.billable ? 1 : 0
-        }
-      )
+      try {
+        var response = await activeCollab.post(`projects/${projectMapping.activeCollabProjectId}/time-records`,
+            {
+              user_id: activeCollabUserId, // TODO: Handle multiple user id's.
+              summary: activeCollabSummary,
+              job_type_id: 1, // TODO: Job Types? No idea how to handle this maybe based off a tag or key word being present in the description.
+              record_date: date.format('YYYY/MM/DD'),
+              value: timeEntry.activeCollabDuration,
+              billable_status: timeEntry.billable ? 1 : 0,
+              parent_id: task.id,
+              parent_type: "Task",
+              task_id: task.id
+            }
+        )
+
+        trackingResult = response.data.single
+      } catch (e) {
+        syncResults.failed.push({
+          summary: `Error from Active Collab when adding a time tracking record. ${e}`,
+          timeEntry: timeEntry
+        })
+        continue
+      }
 
       timeEntryMapping.activeCollabId = trackingResult.id
       // Also storing the result from active collab just in-case.
@@ -1282,7 +1385,8 @@ async function SyncTimeEntries () {
     }
 
     // Then delete it from ActiveCollab.
-    try {      
+    throw new Error('Not yet Implemented activeCollab.timeDelete')
+    try {
       await activeCollab.timeDelete(
         oldTimeEntry.activeCollabProjectId,
         oldTimeEntry.issueNumber,
@@ -1314,7 +1418,7 @@ async function SyncTimeEntries () {
   //console.timeEnd('SyncTimeEntries')
 
   await eventEmitter.emit('timeEntrySyncResults', syncResults)
-  
+
   console.log(`
   Failed: ${syncResults.failed.length}
   Deleted: ${syncResults.deleted.length}

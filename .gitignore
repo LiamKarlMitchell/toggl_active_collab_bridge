@@ -82,3 +82,5 @@ data/
 config/
 
 package-lock\.json
+
+.idea/

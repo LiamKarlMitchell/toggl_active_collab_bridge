@@ -1,55 +1,19 @@
 {
-  "_from": "active-collab",
-  "_id": "active-collab@1.0.0",
-  "_inBundle": false,
-  "_location": "/active-collab",
-  "_phantomChildren": {},
-  "_requested": {
-    "type": "tag",
-    "registry": true,
-    "raw": "active-collab",
-    "name": "active-collab",
-    "escapedName": "active-collab",
-    "rawSpec": "",
-    "saveSpec": null,
-    "fetchSpec": "latest"
-  },
-  "_requiredBy": [
-    "#USER",
-    "/"
-  ],
-  "_resolved": "https://registry.npmjs.org/active-collab/-/active-collab-1.0.0.tgz",
-  "_spec": "active-collab",
-  "_where": "E:\\Source\\Toggl_Active_Collab_Bridge\\attemptTwo",
-  "author": {
-    "name": "Liam Mitchell",
-    "email": "liamkarlmitchell@gmail.com"
-  },
+  "name": "activecollab_node_sdk",
+  "version": "1.1.1",
+  "description": "ActiveCollab node api sdk. Note: Build to JS using instructions from their git repo.",
+  "homepage": "https://github.com/Elvis339/activecollab-node-sdk",
   "bugs": {
-    "url": "https://github.com/liamkarlmitchell/node-active-collab/issues"
+    "url": "https://github.com/Elvis339/activecollab-node-sdk/issues"
   },
-  "bundleDependencies": false,
-  "contributors": [],
-  "dependencies": {
-    "custom-error-generator": "^7.0.0",
-    "object-assign": "^4.0.1",
-    "moment": "^2.2.2",
-    "request-promise": "^4.2.2"
-  },
-  "deprecated": false,
-  "description": "Active Collab API for Node.js created for version 4 api but could likely be improved to work with newer.",
-  "devDependencies": {},
-  "homepage": "https://github.com/liamkarlmitchell/node-active-collab#readme",
-  "keywords": [
-    "api",
-    "activecollab",
-    "timetracking"
-  ],
-  "main": "./lib/client.js",
-  "name": "active-collab",
   "repository": {
     "type": "git",
-    "url": "git://github.com/liamkarlmitchell/node-active-collab.git"
+    "url": "https://github.com/Elvis339/activecollab-node-sdk.git"
   },
-  "version": "1.0.0"
+  "main": "Client/Client.js",
+  "author": "Elvis Sabanovic",
+  "license": "ISC",
+  "dependencies": {
+    "axios": "^0.19.2"
+  }
 }
