@@ -14,6 +14,10 @@ const eventEmitter = require('./MyEventEmitter')
 var TimeEntriesRetrieveDuration = moment.duration(
   config.TimeEntriesRetrieveDuration || { weeks: 2 }
 )
+var TimeEntiresAfter = null
+if (config.TimeEntiresAfter) {
+  TimeEntiresAfter = moment(config.TimeEntiresAfter, 'YYYY/MM/DD')
+}
 
 const { timeMappings, clientMappings, projectMappings } = require('./MyMappings')
 
@@ -337,6 +341,45 @@ async function TogglTryCreateClient (clientInfo) {
   ) {
     // Note: We are assuming Toggl client has not changed.
     return previousMapping
+  } else if (previousMapping && previousMapping.activeCollabName !== clientInfo.name && previousMapping.activeCollabId === clientInfo.id) {
+    // If the previous mapping exists, and the id matches but the name does not.
+    // Then Update the cilent in Toggl and store the updated mapping.
+    // If unable to update because name already exists then delete the previous mapping and attempt to create it again as another syncing may have already done this.
+    try {
+      let result = await toggl.updateClientAsync(previousMapping.togglId, {
+        id: previousMapping.togglId,
+        name: clientInfo.name, // Name required and should be unique per workspace.
+        wid: config.Toggl.workspaceId, // The workspace ID is required.
+        notes: toEmptyStringOrValue(clientInfo.note)
+      })
+
+      var activeCollabTimestamp = clientInfo.updated_on
+          ? clientInfo.updated_on
+          : clientInfo.created_on
+
+      previousMapping.activeCollabLastUpdated = new Date(activeCollabTimestamp * 1000 ).toISOString()
+      previousMapping.togglName = clientInfo.name
+      previousMapping.togglLastUpdated = new Date().toISOString()
+
+      return previousMapping
+    } catch (e) {
+      if (
+          e.code === 400 &&
+          (e.data.startsWith('Name has already been taken') || err.data.startsWith('Missing or invalid client ID'))
+      ) {
+        if (argv.verbose > 5) {
+          console.log(`Client Name ${clientInfo.name} already exists in Toggl getting it's information and removing old mapping.`)
+        }
+
+        // Delete the previous mapping.
+        await clientMappings.delete(previousMapping.togglId)
+
+        // Continue on to create or get existing client in/from Toggl.
+      } else {
+        console.error(`Error updating toggl client.`, e)
+        throw e
+      }
+    }
   }
 
   let clientMapping = await TogglCreateClient(clientInfo)
@@ -456,11 +499,66 @@ async function TogglTryCreateProject (projectInfo) {
   if (
     previousMapping &&
     previousMapping.activeCollabName === projectInfo.name &&
-    previousMapping.activeCollabClientId === projectInfo.clientId &&
+    previousMapping.activeCollabCompanyId === projectInfo.company_id &&
     previousMapping.activeCollabProjectId === projectInfo.id
   ) {
     // Note: We are assuming the Toggl project has not changed.
     return previousMapping
+  } else if (
+      previousMapping &&
+      previousMapping.activeCollabName !== projectInfo.name &&
+      previousMapping.activeCollabProjectId === projectInfo.id
+  ) {
+    // If the previous mapping exists, and the id matches but the name or client do not.
+    // Then Update the project in Toggl and store the updated mapping.
+    // If unable to update because name already exists then delete the previous mapping and attempt to create it again as another syncing may have already done this.
+
+    // Find mapping for the company id.
+    //
+
+    var clientMapping = clientMappings.find(function (mappedClientRecord) {
+      return mappedClientRecord.activeCollabId === projectInfo.company_id
+    })
+
+    if (!clientMapping) {
+      throw new Error(`Unable to find client mapping for active collab project ${projectInfo.name}`)
+    }
+
+    try {
+      let result = await toggl.updateProjectAsync(previousMapping.togglId, {
+        id: previousMapping.togglId,
+        cid: clientMapping.togglId,
+        name: projectInfo.name, // Name required and should be unique per workspace.
+        wid: config.Toggl.workspaceId, // The workspace ID is required.
+      })
+
+      var activeCollabTimestamp = projectInfo.updated_on
+          ? projectInfo.updated_on
+          : projectInfo.created_on
+
+      previousMapping.activeCollabLastUpdated = new Date(activeCollabTimestamp * 1000 ).toISOString()
+      previousMapping.togglName = projectInfo.name
+      previousMapping.togglLastUpdated = new Date().toISOString()
+
+      return previousMapping
+    } catch (e) {
+      if (
+          e.code === 400 &&
+          (e.data.startsWith('Name has already been taken') || err.data.startsWith('Missing or invalid project ID'))
+      ) {
+        if (argv.verbose > 5) {
+          console.log(`Project Name ${projectInfo.name} already exists in Toggl getting it's information and removing old mapping.`)
+        }
+
+        // Delete the previous mapping.
+        await projectMappings.delete(previousMapping.togglId)
+
+        // Continue on to create or get existing project in/from Toggl.
+      } else {
+        console.error(`Error updating toggl project.`, e)
+        throw e
+      }
+    }
   }
 
   return TogglCreateProject(projectInfo)
@@ -594,6 +692,21 @@ async function getActiveCollabProjectTasks (activeCollabProjectId) {
         throw new Error(`Getting Active Collabs tasks for project ${activeCollabProjectId} returned a non OK status.`)
       }
       var activeCollabTasks = result.data.tasks || null
+
+      // Additionally get any "Archived" (e.g. completed) tasks.
+      var archivedResult = await activeCollab.get(`projects/${activeCollabProjectId}/tasks/archive`)
+      if (result.statusText !== 'OK') {
+        console.warn(`Getting Active Collabs Archived tasks for project ${activeCollabProjectId} returned a non OK status.`)
+      } else {
+        if (Array.isArray(archivedResult.data)) {
+          if (activeCollabTasks === null) {
+            activeCollabTasks = archivedResult.data
+          } else {
+            activeCollabTasks = activeCollabTasks.concat(archivedResult.data)
+          }
+        }
+      }
+
     } catch (e) {
       console.error('Unable to get Active Collab tasks.')
       throw e
@@ -603,6 +716,8 @@ async function getActiveCollabProjectTasks (activeCollabProjectId) {
       console.log(`No tasks found for Project ID: ${activeCollabProjectId}`);
       return [];
     }
+
+    // TODO: Remove trashed tasks from the tasks array as to not add time to them?
 
     // Reduce the array of objects down to key on task number.
     projectTasks = activeCollabTasks.reduce(function (obj, item) {
@@ -790,12 +905,18 @@ async function SyncTimeEntries () {
       .clone()
       .subtract(TimeEntriesRetrieveDuration)
 
+    // If set in config, clamp the start date to this.
+    if (TimeEntiresAfter !== null) {
+      fromMoment = moment.max(fromMoment, TimeEntiresAfter)
+    }
+
     if (argv.verbose) {
       console.log(
         `Getting time entries from ${fromMoment.toISOString()}`
       )
     }
 
+    // TODO: Batch this into weeks to handle multiple users in same workspace better?
     syncResults.fromMoment = fromMoment
     syncResults.toMoment = startMoment
     var timeEntries = await toggl.getTimeEntriesAsync(
@@ -910,13 +1031,7 @@ async function SyncTimeEntries () {
           console.log(`Deleting previous time entry: ${previousTimeEntryMapping.date} ${previousTimeEntryMapping.issueNumber} ${previousTimeEntryMapping.summary}`)
         }
 
-        throw new Error('Not yet Implemented activeCollab.timeDelete')
-        // Remove the previous time entry from Active Collab.
-        await activeCollab.timeDelete(
-          previousTimeEntryMapping.activeCollabProjectId,
-          previousTimeEntryMapping.issueNumber,
-          previousTimeEntryMapping.activeCollabId
-        )
+        await activeCollab.put(`move-to-trash/time-record/${previousTimeEntryMapping.activeCollabId}`)
       } catch (error) {
         console.error(`Failed to delete previous time entry mapping: ${previousTimeEntryMapping.date} ${previousTimeEntryMapping.issueNumber} ${previousTimeEntryMapping.summary}`, error.message, error.stack)
       }
@@ -1190,7 +1305,7 @@ async function SyncTimeEntries () {
             }
 
             try {
-              var response = await activeCollab.post(`projects/${projectMapping.activeCollabProjectId}/time-records/${previousTimeEntryMapping.activeCollabId}`,
+              var response = await activeCollab.put(`projects/${projectMapping.activeCollabProjectId}/time-records/${previousTimeEntryMapping.activeCollabId}`,
                   {
                     user_id: activeCollabUserId, // TODO: Handle multiple user id's.
                     summary: activeCollabSummary,
@@ -1205,6 +1320,11 @@ async function SyncTimeEntries () {
               )
               var trackingResult = response.data.single
             } catch (e) {
+              // If failed to find the time entry then delete the existing mapping.
+              // Attempt to create it?
+              if (e.response.status === 404) {
+                await deletePreviousTimeEntryMapping()
+              }
               syncResults.failed.push({
                 summary: `Error from Active Collab when editing a time tracking record. ${e}`,
                 timeEntry: timeEntry
@@ -1384,14 +1504,9 @@ async function SyncTimeEntries () {
       return
     }
 
-    // Then delete it from ActiveCollab.
-    throw new Error('Not yet Implemented activeCollab.timeDelete')
+    // Then delete it from ActiveCollab. (Moves to trash)
     try {
-      await activeCollab.timeDelete(
-        oldTimeEntry.activeCollabProjectId,
-        oldTimeEntry.issueNumber,
-        oldTimeEntry.activeCollabId
-      )
+      await activeCollab.put(`move-to-trash/time-record/${oldTimeEntry.activeCollabId}`)
     } catch (error) {
       if (argv.verbose) {
         console.error(error.message, error.stack.replace(/\\n/g,"\n"))

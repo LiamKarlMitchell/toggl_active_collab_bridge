@@ -253,15 +253,15 @@ output += `<td>${moment.utc(durationSeconds*1000).format('HH:mm:ss')}</td>
             if (result.summary.startsWith('Task not found')) {
               output += `<a target="blank" href="${
                 config.ActiveCollab.webUrl
-              }?path_info=projects/${
+              }/projects/${
                 result.timeEntry.activeCollabProjectId
               }/tasks">View Project</a>`
             } else {
               output += `<a target="blank" href="${
                 config.ActiveCollab.webUrl
-              }?path_info=projects/${
+              }projects/${
                 result.timeEntry.activeCollabProjectId
-              }/tasks/${result.timeEntry.issueNumber}">View Ticket</a>`
+              }">View Project</a>`
             }
           }
           output += `
