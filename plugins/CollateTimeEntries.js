@@ -10,6 +10,20 @@ const events = require('../MyEventEmitter')
 
 module.exports = {
   init: function (pluginConfig) {
+    function getDateFromTimeEntry(time) {
+        let d = new Date(time);
+        //shiftTime.setHours(shiftTime.getHours()+12);
+        month = '' + (d.getMonth() + 1);
+        day = '' + d.getDate();
+        year = d.getFullYear();
+        if (month.length < 2) 
+            month = '0' + month;
+        if (day.length < 2) 
+            day = '0' + day;
+
+        return[year,month,day].join('-');
+      }
+
     function getKeyFromTimeEntry(timeEntry) {
 
         // Some specific tags may not want to be collated together with the other entries without those tags.
@@ -35,8 +49,8 @@ module.exports = {
 
         for (let index = 0; index < event.timeEntries.length; index++) {
             let timeEntry = event.timeEntries[index]
-            var date = timeEntry.start.substr(0, 10)
-
+            
+            var date = getDateFromTimeEntry(timeEntry.start)
             // This should never happen, as the entries are ordered from Toggl.
             if (lastDate > date) {
                 throw new Error(`Time entry records are not in order? LastDate: ${lastDate} Date: ${date} TimeEntryID: ${timeEntry.id}`)
