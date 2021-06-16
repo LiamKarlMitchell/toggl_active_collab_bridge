@@ -12,7 +12,6 @@ module.exports = {
   init: function (pluginConfig) {
     function getDateFromTimeEntry(time) {
         let d = new Date(time);
-        //shiftTime.setHours(shiftTime.getHours()+12);
         month = '' + (d.getMonth() + 1);
         day = '' + d.getDate();
         year = d.getFullYear();
