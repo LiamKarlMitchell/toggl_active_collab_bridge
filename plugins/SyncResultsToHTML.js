@@ -128,17 +128,23 @@ Exported: ${moment().format('DD/MM/YYYY h:mm:ss a')}<br>
 Range: ${syncResults.fromMoment.format(
     'DD/MM/YYYY h:mm:ss a'
   )} - ${syncResults.toMoment.format('DD/MM/YYYY h:mm:ss a')}
- <a target="blank" href="https://toggl.com/app/reports/summary/${
+ <a target="_blank" href="https://track.toggl.com/reports/summary/${
   config.Toggl.workspaceId
 }/from/${syncResults.fromMoment.format(
   'YYYY-MM-DD'
 )}/to/${syncResults.toMoment.format(
   'YYYY-MM-DD'
 )}">Toggl Report on Range</a> |
- <a target="blank" href="https://toggl.com/app/reports/summary/${
+ <a target="_blank" href="https://track.toggl.com/reports/summary/${
   config.Toggl.workspaceId
 }/period/prevWeek">Toggl Report on Previous Week</a>
- <br>
+ <br>`
+
+for (const [toggleUserId, activeCollabClientId] of Object.entries(config.togglToActiveCollabUserMapping).sort()) {
+    output += `<br><a target="_blank" href="${config.ActiveCollab.webUrl}/reports/time/user/${activeCollabClientId}?time_range=monthly&from=${syncResults.fromMoment.format('YYYY-MM-DD')}&to=${syncResults.toMoment.format('YYYY-MM-DD')}&sort_by=record_date&sort_direction=desc&group_by=record_date">Active Collab Report on Range for user ${activeCollabClientId}</a>`
+}
+
+output += `<br><br>
 Failed: ${syncResults.failed.length}<br>
 Deleted: ${syncResults.deleted.length}<br>
 Ignored: ${syncResults.ignored.length}<br>
@@ -251,13 +257,13 @@ output += `<td>${moment.utc(durationSeconds*1000).format('HH:mm:ss')}</td>
             result.timeEntry.issueNumber !== undefined
           ) {
             if (result.summary.startsWith('Task not found')) {
-              output += `<a target="blank" href="${
+              output += `<a target="_blank" href="${
                 config.ActiveCollab.webUrl
               }/projects/${
                 result.timeEntry.activeCollabProjectId
               }/tasks">View Project</a>`
             } else {
-              output += `<a target="blank" href="${
+              output += `<a target="_blank" href="${
                 config.ActiveCollab.webUrl
               }projects/${
                 result.timeEntry.activeCollabProjectId
@@ -274,7 +280,7 @@ output += `<td>${moment.utc(durationSeconds*1000).format('HH:mm:ss')}</td>
         output += `</table>`
       })
 
-      // output += `<iframe Application="Yes" width="100%" height="1024px" src="https://toggl.com/app/reports/summary/${config.Toggl.workspaceId}/from/${syncResults.fromMoment.format('YYYY-MM-DD')}/to/${syncResults.toMoment.format('YYYY-MM-DD')}"></iframe>`
+      // output += `<iframe Application="Yes" width="100%" height="1024px" src="https://track.toggl.com/reports/summary/${config.Toggl.workspaceId}/from/${syncResults.fromMoment.format('YYYY-MM-DD')}/to/${syncResults.toMoment.format('YYYY-MM-DD')}"></iframe>`
 
       output += `
 </body>

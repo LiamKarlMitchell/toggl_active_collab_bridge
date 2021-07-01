@@ -961,6 +961,10 @@ async function SyncTimeEntries () {
       timeEntry.billable = true
     }
 
+    // Parse the start date from Toggl as UTC then change timezone to configured for storing in Active Collab.
+    let date = moment(timeEntry.start).tz(config.timezone || 'Pacific/Auckland')
+    timeEntry.date = date.format('YYYY/MM/DD')
+
     // Allow for modifying a time entry before it is processed.
     await eventEmitter.emit('preProcessTimeEntry', { timeEntry: timeEntry, syncResults: syncResults })
   }
@@ -1011,13 +1015,17 @@ async function SyncTimeEntries () {
       timeEntry.activeCollabProjectId = projectMapping.activeCollabProjectId
     }
 
-    // Parse the start date from Active Collab as UTC then change timezone to configured for storing in Active Collab.
-    var date = moment.utc(timeEntry.start).tz(config.timezone || 'Pacific/Auckland')
-    timeEntry.date = date.format('YYYY/MM/DD')
-
     let previousTimeEntryMapping = timeMappings.getRecord(timeEntry.id)
 
-    if (previousTimeEntryMapping !== null) {
+    var previousTimeEntryDate = ''
+    if (previousTimeEntryMapping !== null && previousTimeEntryMapping !== undefined) {
+      // Set the date for previous record from the previousTimeEntryMapping.at if not set.
+      if (previousTimeEntryMapping.date === undefined) {
+        previousTimeEntryDate = moment(previousTimeEntryMapping.at).tz(config.timezone || 'Pacific/Auckland').format('YYYY/MM/DD')
+      } else {
+        previousTimeEntryDate = previousTimeEntryMapping.date
+      }
+
       await eventEmitter.emit('beforeDeletePreviousTimeEntry', { timeEntry: timeEntry, previousTimeEntryMapping: previousTimeEntryMapping, syncResults: syncResults })
     }
 
@@ -1028,12 +1036,12 @@ async function SyncTimeEntries () {
 
       try {
         if (argv.verbose) {
-          console.log(`Deleting previous time entry: ${previousTimeEntryMapping.date} ${previousTimeEntryMapping.issueNumber} ${previousTimeEntryMapping.summary}`)
+          console.log(`Deleting previous time entry: ${previousTimeEntryDate} ${previousTimeEntryMapping.issueNumber} ${previousTimeEntryMapping.summary}`)
         }
 
         await activeCollab.put(`move-to-trash/time-record/${previousTimeEntryMapping.activeCollabId}`)
       } catch (error) {
-        console.error(`Failed to delete previous time entry mapping: ${previousTimeEntryMapping.date} ${previousTimeEntryMapping.issueNumber} ${previousTimeEntryMapping.summary}`, error.message, error.stack)
+        console.error(`Failed to delete previous time entry mapping: ${previousTimeEntryDate} ${previousTimeEntryMapping.issueNumber} ${previousTimeEntryMapping.summary}`, error.message, error.stack)
       }
 
       if (deleteMappingRecord) {
@@ -1220,7 +1228,7 @@ async function SyncTimeEntries () {
       togglId: timeEntry.id,
       dataType: 'TimeEntryMapping',
 
-      date: date.format('YYYY/MM/DD'),
+      date: timeEntry.date,
       summary: activeCollabSummary,
       at: timeEntry.at,
       billable: timeEntry.billable,
@@ -1284,7 +1292,7 @@ async function SyncTimeEntries () {
         if (
           previousTimeEntryMapping.summary !== activeCollabSummary ||
           previousDuration !== duration ||
-          previousTimeEntryMapping.date !== date.format('YYYY/MM/DD') ||
+          previousTimeEntryDate !== timeEntry.date ||
           previousTimeEntryMapping.billable !== timeEntry.billable ||
           tagsChanged === true
         ) {
@@ -1300,7 +1308,7 @@ async function SyncTimeEntries () {
                   projectMapping.activeCollabName
                 } #${timeEntry.issueNumber} ${
                   task.name
-                } ${activeCollabSummary} ${date.format('YYYY/MM/DD')} ${duration}.`
+                } ${activeCollabSummary} ${timeEntry.date} ${duration}.`
               )
             }
 
@@ -1310,7 +1318,7 @@ async function SyncTimeEntries () {
                     user_id: activeCollabUserId, // TODO: Handle multiple user id's.
                     summary: activeCollabSummary,
                     job_type_id: 1, // TODO: Job Types? No idea how to handle this maybe based off a tag or key word being present in the description.
-                    record_date: date.format('YYYY/MM/DD'),
+                    record_date: timeEntry.date,
                     value: timeEntry.activeCollabDuration,
                     billable_status: timeEntry.billable ? 1 : 0,
                     parent_id: task.id,
@@ -1407,7 +1415,7 @@ async function SyncTimeEntries () {
       console.log(
         `Creating time entry on ${projectMapping.activeCollabName} #${task.id} ${
           task.name
-        } ${activeCollabSummary} ${date.format('YYYY/MM/DD')} ${duration}.`
+        } ${activeCollabSummary} ${timeEntry.date} ${duration}.`
       )
     }
 
@@ -1422,7 +1430,7 @@ async function SyncTimeEntries () {
               user_id: activeCollabUserId, // TODO: Handle multiple user id's.
               summary: activeCollabSummary,
               job_type_id: 1, // TODO: Job Types? No idea how to handle this maybe based off a tag or key word being present in the description.
-              record_date: date.format('YYYY/MM/DD'),
+              record_date: timeEntry.date,
               value: timeEntry.activeCollabDuration,
               billable_status: timeEntry.billable ? 1 : 0,
               parent_id: task.id,

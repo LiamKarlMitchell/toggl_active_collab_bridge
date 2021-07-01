@@ -2,25 +2,43 @@
   "DataDirectory": "./data",
   "PIDFilePath": "./data/pid.lock",
   "TimeEntriesRetrieveDuration": {
-    "weeks": 2
+    "weeks": 5
   },
+  "TimeEntiresAfter": "2020/11/01",
   "timezone": "Pacific/Auckland",
   "Toggl": {
-    "token": "togglAPITokenGoesHere",
-    "workspace": "ExampleWorkspace",
-    "workspaceId": null
+    "token": "Toggl Token Here",
+    "workspace": "WorkSpace Name Here",
+    "workspaceId": workspaceIdHere
   },
   "ActiveCollab": {
-    "Users": [],
-    "apiToken": "activeCollabAPITokenHere",
-    "apiUrl": "https://selfhostedactivecollab/api.php",
-    "email": "",
-    "password": ""
+    "apiToken": "apiToken Here",
+    "apiUrl": "API web URL here",
+    "webUrl": "Web URL here",
+    "email": "email here",
+    "password": "password here",
+    "appName": "Toggl Sync",
+    "organizationName": "Organization Name Here",
+    "isSelfHosted": true,
+    "AccountID": null,
+    "DefaultJobTypeID": 1
   },
   "Schedule": {
     "CompaniesAndProjects": "0 * * * *",
-    "TimeEntries": "*/5 * * * *"
+    "TimeEntries": "0 */1 * * *"
+  },
+  "togglToActiveCollabUserMapping": {
+    "togglIdHere": "activeCollabUserIdHere"
   },
   "projectTasksCacheTTLSeconds": 300,
-  "plugins": {}
+  "redirectFilters": [
+  ],
+  "plugins": {
+    "CollateTimeEntries": { "pluginOrder": 1, "enabled": true, "keyTags": [ "Overtime" ] },
+    "CompleteTicketViaTag": { "pluginOrder": 2, "enabled": true },
+    "StoreSummaryAsCommentOnTicketViaTag": { "pluginOrder": 3, "enabled": true },
+    "SyncResultsToHTML": { "pluginOrder": 30, "enabled": true },
+    "Minimum": { "pluginOrder": 10, "duration": 900, "enabled": true },
+    "Round": { "pluginOrder": 11, "duration": 300, "enabled": true }
+  }
 }
