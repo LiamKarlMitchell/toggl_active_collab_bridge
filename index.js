@@ -896,7 +896,10 @@ async function SyncTimeEntries () {
 
     // To contain mapping info of previous time entries that we deleted from activeCollab because they were no longer received by toggl in a recent query.
     deleted: [],
-    togglIdsReceived: []
+    togglIdsReceived: [],
+
+    // To contain tasks we reopened.
+    tasksReopened: [],
   }
 
   var startMoment = moment()
@@ -1187,19 +1190,51 @@ async function SyncTimeEntries () {
 
     var task = projectTasks[timeEntry.issueNumber]
     if (!task) {
-      await deletePreviousTimeEntryMapping()
-      syncResults.failed.push({
-        summary: `Task not found in in Active Collab for ${timeEntry.issueNumber} project ${projectMapping.activeCollabName}`,
-        timeEntry: timeEntry
-      })
-      continue
+      if (argv.verbose > 5) {
+        console.log(`Task not found in in Active Collab for ${timeEntry.issueNumber} project ${projectMapping.activeCollabName}`)
+      }
+
+      // Try to re-open the task as it might not be included in list from API if completed for some reason...
+      if (previousTimeEntryMapping && previousTimeEntryMapping.taskId > 0) {
+        try {
+          if (argv.verbose > 5) {
+            console.log(`Attempt to reopen task in Active Collab ${previousTimeEntryMapping.issueNumber} project ${projectMapping.activeCollabName}`)
+          }
+          let response = await activeCollab.put(`/open/task/${previousTimeEntryMapping.taskId}`)
+
+          task = response.data.single
+
+          syncResults.tasksReopened.push(task)
+          // TODO: Can we modify the cache in this way?
+          projectTasks[timeEntry.issueNumber] = task
+
+          // Well we reopened the task, keep on going.
+        } catch (e) {
+          // If failed to find/reopen the time entry then delete the existing mapping.
+          if (e.response.status === 404) {
+            await deletePreviousTimeEntryMapping()
+          }
+          syncResults.failed.push({
+            summary: `Error from Active Collab when reopening the task got status ${e.response.status}. ${e}`,
+            timeEntry: timeEntry
+          })
+          continue
+        }
+      } else {
+        await deletePreviousTimeEntryMapping()
+        syncResults.failed.push({
+          summary: `Task not found in Active Collab for ${timeEntry.issueNumber} project ${projectMapping.activeCollabName}`,
+          timeEntry: timeEntry
+        })
+        continue;
+      }
     }
 
     if (argv.verbose > 5) {
       console.log(
-        `Task found in Active Collab ${projectMapping.activeCollabName} ${
-          task.id
-        } ${task.name}`
+          `Task found in Active Collab ${projectMapping.activeCollabName} ${
+              task.id
+          } ${task.name}`
       )
     }
 
@@ -1541,6 +1576,31 @@ async function SyncTimeEntries () {
   //console.timeEnd('SyncTimeEntries')
 
   await eventEmitter.emit('timeEntrySyncResults', syncResults)
+
+
+  // Close tasks we opened to add/update time entries on.
+  for (let index = 0; index < syncResults.tasksReopened.length; ++index) {
+    let task = syncResults.tasksReopened[index]
+
+    try {
+      if (argv.verbose > 5) {
+        console.log(`Attempt to close task in Active Collab ${task.task_number}`)
+
+        if (task.open_subtasks > 0) {
+          console.warn(`Note: There are still open subtasks on the task ${task.task_number} suggest to double check if those are resolved.`)
+        }
+      }
+      let response = await activeCollab.put(`/complete/task/${task.id}`)
+    } catch (e) {
+      // If failed to find the task to close well what can we do...
+      if (e.response.status === 404) {
+        console.warn(`Failed to close task`)
+        continue
+      } else {
+        console.warn(`Unable to close task ${task.id} exception ${e.response.status}`)
+      }
+    }
+  }
 
   console.log(`
   Failed: ${syncResults.failed.length}
