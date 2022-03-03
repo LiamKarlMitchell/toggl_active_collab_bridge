@@ -199,6 +199,14 @@ Store the summary from the time entry onto the Active Collab ticket if the tag i
 ### Sync Results To HTML
 Recommended, gives an HTML report after syncing that can be used to see potential issues.
 
+### Disk Space Check
+
+Errors at startup if not enough disk space available.
+
+Arguments:
+freeSpace: number of megabytes
+
+
 ## License etc...
 License: MIT
 
