@@ -1153,7 +1153,8 @@ async function SyncTimeEntries () {
       continue
     }
 
-    if (timeEntry.duronly) {
+    // if (timeEntry.duronly) {     // This is the recommended documentation way, however, it is false-positive and always true currently.
+    if (!(timeEntry.start  && timeEntry.stop)) {    // Using alternative manual check
       console.warn('Duration only time entries are not yet implemented.')
       await deletePreviousTimeEntryMapping()
       syncResults.ignored.push({
@@ -1162,7 +1163,6 @@ async function SyncTimeEntries () {
       })
       continue
     }
-
 
     if (activeCollabSummary === '') {
       await deletePreviousTimeEntryMapping()
