@@ -365,7 +365,7 @@ async function TogglTryCreateClient (clientInfo) {
     } catch (e) {
       if (
           e.code === 400 &&
-          (e.data.startsWith('Name has already been taken') || err.data.startsWith('Missing or invalid client ID'))
+          (e.data.startsWith('Name has already been taken') || e.data.startsWith('Missing or invalid client ID'))
       ) {
         if (argv.verbose > 5) {
           console.log(`Client Name ${clientInfo.name} already exists in Toggl getting it's information and removing old mapping.`)
@@ -544,7 +544,7 @@ async function TogglTryCreateProject (projectInfo) {
     } catch (e) {
       if (
           e.code === 400 &&
-          (e.data.startsWith('Name has already been taken') || err.data.startsWith('Missing or invalid project ID'))
+          (e.data.startsWith('project name already used') || err.data.startsWith('Missing or invalid project ID'))
       ) {
         if (argv.verbose > 5) {
           console.log(`Project Name ${projectInfo.name} already exists in Toggl getting it's information and removing old mapping.`)
@@ -570,7 +570,6 @@ async function TogglTryCreateProject (projectInfo) {
  */
 async function TogglCreateProject (projectInfo) {
   // TODO: Decide if we want to ignore is_completed: 1 or by project state?
-
   var togglClientMapping = clientMappings.find(function (mappedClientRecord) {
     return mappedClientRecord.activeCollabId === projectInfo.company_id
   })
@@ -592,8 +591,8 @@ async function TogglCreateProject (projectInfo) {
       cid: togglClientMapping.togglId,
       active: true,
       is_private: false,
-      billable: projectInfo.is_billable, // Note: Might not work in free version of Toggl?
-      color: Math.floor(Math.random() * 15) // 15 colors. Taste the rainbow.
+      // billable: projectInfo.is_billable, // Note: Might not work in free version of Toggl?
+      // color: Math.floor(Math.random() * 15).toString() // 15 colors. Taste the rainbow.
       // rate: 9001, // We don't use Rate.
     })
     if (argv.verbose > 5) {
@@ -628,7 +627,7 @@ async function TogglCreateProject (projectInfo) {
     // Special handling if name already taken, get the existing one and map to it.
     if (
       err.code === 400 &&
-      err.data.startsWith('Name has already been taken')
+      err.data.startsWith('project name already used')
     ) {
       if (argv.verbose > 5) {
         console.log(`Project Name ${projectInfo.name} already taken getting it's information.`)
@@ -926,6 +925,7 @@ async function SyncTimeEntries () {
       fromMoment.toISOString(),
       startMoment.toISOString()
     )
+    timeEntries.reverse() // Change from api v8 to v9 the order is reversed.
   } catch (error) {
     //console.timeEnd('SyncTimeEntries')
     syncResults.error = error
