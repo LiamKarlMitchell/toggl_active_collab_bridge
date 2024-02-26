@@ -365,7 +365,7 @@ async function TogglTryCreateClient (clientInfo) {
     } catch (e) {
       if (
           e.code === 400 &&
-          (e.data.startsWith('Name has already been taken') || e.data.startsWith('Missing or invalid client ID'))
+          (e.data.startsWith('Name has already been taken') || e.data.includes('already exists') || e.data.startsWith('Missing or invalid client ID'))
       ) {
         if (argv.verbose > 5) {
           console.log(`Client Name ${clientInfo.name} already exists in Toggl getting it's information and removing old mapping.`)
@@ -436,7 +436,7 @@ async function TogglCreateClient (clientInfo) {
     // Special handling if name already taken, get the existing one and map to it.
     if (
       err.code === 400 &&
-      err.data.startsWith('Name has already been taken')
+      (err.data.startsWith('Name has already been taken') || err.data.includes('already exists'))
     ) {
       if (argv.verbose > 5) {
         console.log(`Client Name ${clientInfo.name} already taken getting it's information.`)
