@@ -544,7 +544,7 @@ async function TogglTryCreateProject (projectInfo) {
     } catch (e) {
       if (
           e.code === 400 &&
-          (e.data.startsWith('project name already used') || err.data.startsWith('Missing or invalid project ID'))
+          (e.data.startsWith('project name already used') || e.data.includes('already exists') || e.data.startsWith('Missing or invalid project ID'))
       ) {
         if (argv.verbose > 5) {
           console.log(`Project Name ${projectInfo.name} already exists in Toggl getting it's information and removing old mapping.`)
@@ -627,7 +627,10 @@ async function TogglCreateProject (projectInfo) {
     // Special handling if name already taken, get the existing one and map to it.
     if (
       err.code === 400 &&
-      err.data.startsWith('project name already used')
+      (
+        err.data.startsWith('project name already used')
+        || err.data.includes('already exists')
+      )
     ) {
       if (argv.verbose > 5) {
         console.log(`Project Name ${projectInfo.name} already taken getting it's information.`)
